@@ -58,7 +58,7 @@ jobs:
       - run: cargo build --locked -p envlume
       - run: cargo run --locked -p envlume -- --version
       - run: pnpm desktop build --debug --no-bundle --target ${{ matrix.target }} -- --locked
-      - run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml
+      - run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml apps/desktop/src-tauri/Cargo.toml
 
   security:
     name: Dependency audit, licenses and secrets

@@ -1091,18 +1091,18 @@ v0.1 正式发布至少完成以下测试矩阵，**任何 P0 失败不得发布
 
 | ADR | 决策 | 状态 |
 |---|---|---|
-| ADR-0001 | Tauri 2 + React/TypeScript 桌面 | Accepted |
-| ADR-0002 | Rust 单核心，CLI/MCP/UI 共享应用服务 | Accepted |
-| ADR-0003 | 本地 STDIO MCP、无 daemon、独立 per-workspace binding | Accepted |
-| ADR-0004 | 项目与部署环境、工具链彼此独立 | Accepted |
-| ADR-0005 | SQLite 元数据 + OS 凭据存储，不在数据库保存明文密码 | Accepted |
-| ADR-0006 | AI 能力默认拒绝；v0.1 基础设施只读 | Accepted |
-| ADR-0007 | 项目级客户端集成使用配置适配器，支持回滚 | Accepted |
-| ADR-0008 | 工具链原生发现 + 显式路径，mise 为可选适配 | Accepted |
-| ADR-0009 | v0.1 仅 MySQL，不提前并行开发 Redis/ES/SSH | Accepted |
-| ADR-0010 | v0.1 不承诺 OS 级隔离，不暴露任意 Shell/SQL 写接口 | Accepted |
+| [ADR-0001](adr/ADR-0001.md) | Tauri 2 + React/TypeScript 桌面 | Accepted |
+| [ADR-0002](adr/ADR-0002.md) | Rust 单核心，CLI/MCP/UI 共享应用服务 | Accepted |
+| [ADR-0003](adr/ADR-0003.md) | 本地 STDIO MCP、无 daemon、独立 per-workspace binding | Accepted |
+| [ADR-0004](adr/ADR-0004.md) | 项目与部署环境、工具链彼此独立 | Accepted |
+| [ADR-0005](adr/ADR-0005.md) | SQLite 元数据 + OS 凭据存储，不在数据库保存明文密码 | Accepted |
+| [ADR-0006](adr/ADR-0006.md) | AI 能力默认拒绝；v0.1 基础设施只读 | Accepted |
+| [ADR-0007](adr/ADR-0007.md) | 项目级客户端集成使用配置适配器，支持回滚 | Accepted |
+| [ADR-0008](adr/ADR-0008.md) | 工具链原生发现 + 显式路径，mise 为可选适配 | Accepted |
+| [ADR-0009](adr/ADR-0009.md) | v0.1 仅 MySQL，不提前并行开发 Redis/ES/SSH | Accepted |
+| [ADR-0010](adr/ADR-0010.md) | v0.1 不承诺 OS 级隔离，不暴露任意 Shell/SQL 写接口 | Accepted |
 
-新增或改变 Accepted ADR 时必须说明**背景、备选方案、决策理由、风险、安全影响、迁移方案和验证证据**。不允许只因“另一个框架更流行”而直接重写架构。
+使用 [ADR 模板](adr/TEMPLATE.md) 登记新决策。新增或改变 Accepted ADR 时必须说明**背景、备选方案、决策理由、风险、安全影响、迁移方案和验证证据**。不允许只因“另一个框架更流行”而直接重写架构。
 
 ---
 

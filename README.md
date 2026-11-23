@@ -4,7 +4,7 @@ A local-first environment gateway for AI coding agents.
 
 Envlume 面向同时维护多个项目的开发者。每个工作区可以分别指定本机工具链、可访问的环境资源，以及允许 AI 执行的构建和测试任务。目标是让 AI 知道当前项目该用哪个 JDK、能查哪个数据库，并让开发者拿到可以复核的执行结果。
 
-**架构基线和交付计划已就绪，v0.1 待开发。** 桌面安装包、CLI 和 MCP 服务将在后续任务中交付。[查看交付进度](docs/plan/PLAN.md)
+**当前可从源码启动桌面 Shell，并用独立 CLI 查询版本。** v0.1 的项目绑定、资源访问、MCP 服务和安装包按任务卡逐步交付。[查看交付进度](docs/plan/PLAN.md)
 
 ## v0.1 的使用场景
 
@@ -39,7 +39,49 @@ Envlume 面向同时维护多个项目的开发者。每个工作区可以分别
 
 - 了解模块边界、权限模型和发布标准，阅读[系统架构](docs/architecture/ARCHITECTURE.md)。
 - 查找当前任务、前置依赖和验收要求，从[交付计划](docs/plan/PLAN.md)进入对应任务卡。
-- 从零搭建工程，从 [T01 工作区与三目标构建](docs/plan/tasks/T01-workspace-ci.md) 开始。该任务交付首批可运行的构建和测试命令。
+- 工程约定和真实环境操作边界见 [AGENTS.md](AGENTS.md)。首张 [Phase 0 功能 Issue](https://github.com/Refinex-Space/envlume/issues/1) 跟踪 T01–T04。
+
+### 新检出环境
+
+在 Apple Silicon 或 Intel macOS 上安装 Xcode Command Line Tools（`xcode-select --install`）。在 Windows x64 上安装含 **Desktop development with C++** 工作负载和 Windows SDK 的 Visual Studio Build Tools，以及 Microsoft Edge WebView2 Runtime。安装本机架构的 rustup 和 Node.js 24.14.1，Windows 使用默认 MSVC 工具链。系统依赖见 [Tauri 官方开发环境说明](https://v2.tauri.app/start/prerequisites/)。
+
+从仓库根目录运行以下命令。rustup 首次运行 Cargo 时按 `rust-toolchain.toml` 安装 Rust、clippy 和 rustfmt。首轮需要联网下载工具和依赖。
+
+```sh
+npm install --global pnpm@10.33.0
+pnpm install --frozen-lockfile
+cargo run --locked -p envlume -- --version
+pnpm desktop dev
+```
+
+CLI 应输出 `envlume 0.1.0-dev.1`。桌面窗口启动后可展开“查看命令行版本”。开发服务器仅监听 `http://127.0.0.1:1420`。按 Ctrl+C 结束开发会话，只预览 Web 界面可用 `pnpm dev`。
+
+### 构建与验证
+
+以下命令适用于 macOS 终端和 Windows PowerShell。从新检出开始，先执行上面的锁定安装。
+
+```sh
+pnpm lint
+pnpm typecheck
+pnpm unit
+pnpm build
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo tree --locked -p envlume-domain --target all
+cargo build --locked -p envlume
+pnpm desktop build --debug --no-bundle -- --locked
+```
+
+本机构建的可执行文件位于 `target/debug/`，名称为 `envlume`、`envlume-desktop`，Windows 加 `.exe`。桌面 build 会将生产前端嵌入开发二进制，可关闭 Vite 后运行。三目标 CI 分别核对 rustc 宿主与目标，执行相同检查并显式传入目标三元组，产物位于 `target/<target>/debug/`。[CI 工作流](.github/workflows/ci.yml)
+
+| 原生作业 | Rust 目标 |
+|---|---|
+| macOS Apple Silicon | `aarch64-apple-darwin` |
+| macOS Intel | `x86_64-apple-darwin` |
+| Windows x64 | `x86_64-pc-windows-msvc` |
+
+`crates/domain` 只承载领域模型，`crates/application` 供 `crates/cli` 和 `apps/desktop/src-tauri` 共用，React 界面位于 `apps/desktop/src`。T01 Shell 仅展示本地内容，主窗口 capability 的权限列表为空。CI 还执行 RustSec 漏洞检查、Rust 与前端依赖许可证扫描和 Git 历史秘密扫描。[威胁与验收编号](docs/architecture/threat-tests.md) · [T01 执行记录](docs/plan/tasks/T01-workspace-ci.md)
 
 ## 许可证
 

@@ -2,7 +2,7 @@
 
 **首个交付终点是 R3 的 v0.1 MVP。** 开发者在干净的 macOS 或 Windows 11 上安装 Envlume，导入已有 Java 项目，为工作区选定 JDK/Maven，授权 DEV MySQL，并接入 AI 客户端。关闭桌面后，Agent 仍能查表结构、运行 Maven 测试，用户能用 `evidenceId` 核对真实结果。首发覆盖 Claude Code、Codex、Cursor，以及 Apple Silicon、Intel macOS 和 Windows 11 x64。
 
-基线为 2026-11-23 的架构 v1.0.0。当前仓库有 README、MIT LICENSE 和架构文档，工程脚手架、产品能力、CI、安装包及发布证据均待交付。Phase 0–3 实现首版，Phase 4 对应 v0.2，Phase 5 对应 v1.0 和由真实需求决定的 v1.0+ 能力。运行形态、权限、密钥、绑定或接口兼容发生变化时，按 §0、§20 先处理 ADR 并同步基线。[架构全文](../architecture/ARCHITECTURE.md)
+基线为 2026-11-23 的架构 v1.0.0。计划起点为含 README、MIT LICENSE 和架构文档的仓库，工程交付状态见下方任务表和当前检查点。Phase 0–3 实现首版，Phase 4 对应 v0.2，Phase 5 对应 v1.0 和由真实需求决定的 v1.0+ 能力。运行形态、权限、密钥、绑定或接口兼容发生变化时，按 §0、§20 先处理 ADR 并同步基线。[架构全文](../architecture/ARCHITECTURE.md)
 
 ## 从哪里开始
 
@@ -34,7 +34,7 @@
 
 | 任务卡 | 交付重点 | 前置 | 状态 |
 |---|---|---|---|
-| [T01 建立工作区和三目标构建](tasks/T01-workspace-ci.md) | 工作区、三目标 CI、ADR 与质量门 | — | 待开始 |
+| [T01 建立工作区和三目标构建](tasks/T01-workspace-ci.md) | 工作区、三目标 CI、ADR 与质量门 | — | 已完成 |
 | [T02 冻结领域模型与入口契约](tasks/T02-domain-contracts.md) | 领域类型、权限词汇与可执行契约 | T01 | 待开始 |
 | [T03 建立 SQLite 存储、迁移与恢复](tasks/T03-sqlite-and-shared-state.md) | 共享数据库、迁移与恢复 | T02 | 待开始 |
 | [T04 打通独立 STDIO 进程](tasks/T04-mcp-stdio-skeleton.md) | 独立 STDIO 与受控模拟响应 | T03 | 待开始 |
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| 尚未开工 | 已建立交付顺序和验收映射 | 首个实现任务待开始 | [T01 工程骨架](tasks/T01-workspace-ci.md) |
+| T02 待开始 | [T01-A01–A03](tasks/T01-workspace-ci.md#执行记录) 通过，桌面与 CLI 已在三个原生目标编译，[CI 四项作业通过](https://github.com/Refinex-Space/envlume/actions/runs/45200081587) | 按 T02 冻结领域类型、权限词汇与入口契约 | [T02 领域模型与入口契约](tasks/T02-domain-contracts.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 
