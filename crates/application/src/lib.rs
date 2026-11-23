@@ -6,3 +6,4 @@ pub mod result;
 pub use access::{RequestContext, Session};
 pub use result::ErrorCode;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub mod projects;

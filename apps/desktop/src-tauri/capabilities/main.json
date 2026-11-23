@@ -1,6 +1,6 @@
 {
   "identifier": "main",
-  "description": "The local shell only renders bundled content.",
+  "description": "Only the local main window may read the project catalogue.",
   "windows": ["main"],
-  "permissions": []
+  "permissions": ["allow-list-projects"]
 }

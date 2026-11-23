@@ -12,8 +12,8 @@
     "windows": [{"label": "main", "title": "Envlume", "width": 800, "height": 540}],
     "security": {
       "capabilities": ["main"],
-      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-src 'none'",
-      "devCsp": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:1420; img-src 'self'; base-uri 'none'; form-action 'none'"
+      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self'; base-uri 'none'; form-action 'none'; frame-src 'none'",
+      "devCsp": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost 'self' ws://127.0.0.1:1420; img-src 'self'; base-uri 'none'; form-action 'none'"
     }
   },
   "bundle": { "active": false, "icon": ["icons/icon.png", "icons/icon.ico"] }

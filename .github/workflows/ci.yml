@@ -57,6 +57,11 @@ jobs:
       - run: cargo test --workspace --locked
       - run: cargo build --locked -p envlume
       - run: cargo run --locked -p envlume -- --version
+      - name: Compare desktop IPC and independent CLI in a fresh user profile
+        run: |
+          cli="target/$CARGO_BUILD_TARGET/debug/envlume"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then cli="$cli.exe"; fi
+          cargo run --locked -p envlume-desktop --example shared_catalogue --features tauri/custom-protocol -- "$cli"
       - run: pnpm desktop build --debug --no-bundle --target ${{ matrix.target }} -- --locked
       - run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml apps/desktop/src-tauri/Cargo.toml
 
