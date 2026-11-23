@@ -35,7 +35,7 @@
 | 任务卡 | 交付重点 | 前置 | 状态 |
 |---|---|---|---|
 | [T01 建立工作区和三目标构建](tasks/T01-workspace-ci.md) | 工作区、三目标 CI、ADR 与质量门 | — | 已完成 |
-| [T02 冻结领域模型与入口契约](tasks/T02-domain-contracts.md) | 领域类型、权限词汇与可执行契约 | T01 | 待开始 |
+| [T02 冻结领域模型与入口契约](tasks/T02-domain-contracts.md) | 领域类型、权限词汇与可执行契约 | T01 | 已完成 |
 | [T03 建立 SQLite 存储、迁移与恢复](tasks/T03-sqlite-and-shared-state.md) | 共享数据库、迁移与恢复 | T02 | 待开始 |
 | [T04 打通独立 STDIO 进程](tasks/T04-mcp-stdio-skeleton.md) | 独立 STDIO 与受控模拟响应 | T03 | 待开始 |
 | [R0 验收骨架与契约](tasks/R0-foundation-review.md) | 同库双入口、模拟协议和编译证据 | T04 | 待开始 |
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| T02 待开始 | [T01-A01–A03](tasks/T01-workspace-ci.md#执行记录) 通过，桌面与 CLI 已在三个原生目标编译，[CI 四项作业通过](https://github.com/Refinex-Space/envlume/actions/runs/45200081587) | 按 T02 冻结领域类型、权限词汇与入口契约 | [T02 领域模型与入口契约](tasks/T02-domain-contracts.md) |
+| T03 待开始 | [T02-A01–A03](tasks/T02-domain-contracts.md#执行记录) 通过；实现修订 `8d65bb0`，可用 `cargo test --workspace --locked` 与 `pnpm unit` 复跑 | 按 T03 建立 SQLite 存储、迁移与恢复，接入双入口项目读取 | [T03 存储与共享状态](tasks/T03-sqlite-and-shared-state.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 
