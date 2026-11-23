@@ -1,0 +1,26 @@
+{
+  "name": "@envlume/desktop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "tauri": "tauri",
+    "lint": "biome lint --error-on-warnings src",
+    "typecheck": "tsc --noEmit",
+    "unit": "vitest run",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.8",
+    "@tauri-apps/cli": "2.12.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
+  }
+}

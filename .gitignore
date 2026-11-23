@@ -18,3 +18,9 @@ rustc-ice-*.txt
 
 # JetBrains project settings
 .idea/
+
+node_modules/
+dist/
+apps/desktop/src-tauri/gen/
+CLAUDE.local.md
+.DS_Store

@@ -1,0 +1,6 @@
+{
+  "identifier": "main",
+  "description": "The local shell only renders bundled content.",
+  "windows": ["main"],
+  "permissions": []
+}

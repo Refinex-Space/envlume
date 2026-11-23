@@ -1,0 +1,13 @@
+[workspace]
+members = ["crates/domain", "crates/application", "crates/cli", "apps/desktop/src-tauri"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0-dev.1"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+envlume-domain = { path = "crates/domain" }
+envlume-application = { path = "crates/application" }

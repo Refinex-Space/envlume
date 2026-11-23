@@ -1,0 +1,14 @@
+{
+  "name": "envlume-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": { "node": "24.14.1" },
+  "scripts": {
+    "dev": "pnpm --filter @envlume/desktop dev",
+    "desktop": "pnpm --filter @envlume/desktop tauri",
+    "lint": "pnpm --filter @envlume/desktop lint",
+    "typecheck": "pnpm --filter @envlume/desktop typecheck",
+    "unit": "pnpm --filter @envlume/desktop unit",
+    "build": "pnpm --filter @envlume/desktop build"
+  }
+}

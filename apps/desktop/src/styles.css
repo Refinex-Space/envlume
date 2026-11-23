@@ -1,0 +1,13 @@
+:root {
+  font-family: "Inter", system-ui, sans-serif;
+  background: #f5f6f1;
+  color: #253e34;
+}
+body { margin: 0; }
+main { max-width: 36rem; margin: clamp(3rem, 15vh, 8rem) auto; padding: 0 2rem; }
+h1 { font-size: clamp(3rem, 9vw, 5rem); letter-spacing: -.06em; margin: 0; }
+p { color: #4d6056; margin: .5rem 0 3rem; }
+details { border-top: 1px solid #c4cec4; padding-top: 1.25rem; }
+summary { cursor: pointer; width: fit-content; }
+summary:focus-visible { outline: 2px solid #286448; outline-offset: 4px; }
+code { display: block; margin-top: 1rem; }

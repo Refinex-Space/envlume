@@ -1,0 +1,82 @@
+name: Workspace CI
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native / ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_INCREMENTAL: 0
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - name: Verify native toolchain
+        run: |
+          rustc -vV
+          rustc -vV | grep -Fx "host: $CARGO_BUILD_TARGET"
+          cargo --version
+          node --version
+          pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm unit
+      - run: pnpm build
+      - run: pnpm licenses list --json | node scripts/check-js-licenses.mjs
+      - run: cargo fmt --all --check
+      - name: Check domain dependency boundary
+        run: |
+          cargo tree --locked -p envlume-domain --target all --prefix none > domain-tree.txt
+          cat domain-tree.txt
+          if grep -Ei '^(tauri|rusqlite|libsqlite3-sys|sqlx-sqlite|rmcp)( |-|$)' domain-tree.txt; then exit 1; fi
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: cargo build --locked -p envlume
+      - run: cargo run --locked -p envlume -- --version
+      - run: pnpm desktop build --debug --no-bundle --target ${{ matrix.target }} -- --locked
+      - run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml
+
+  security:
+    name: Dependency audit, licenses and secrets
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2
+        with:
+          tool: cargo-audit@0.23.0,cargo-deny@0.20.2
+      - run: cargo audit
+      - run: cargo deny --locked check licenses
+      - name: Scan Git history for secrets
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSLo gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz' | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks git --redact --log-opts=--all "$GITHUB_WORKSPACE"
