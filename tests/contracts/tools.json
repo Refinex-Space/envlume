@@ -1,0 +1,472 @@
+[
+  {
+    "name": "project_context",
+    "capability": "project.inspect",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "project",
+        "workspace",
+        "targets",
+        "capabilities"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "environment_list",
+    "capability": "environment.inspect",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "environments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_-]*$"
+              },
+              "resources": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "alias": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^[a-z][a-z0-9_-]*$"
+                    },
+                    "health": {
+                      "type": "string",
+                      "enum": [
+                        "unknown",
+                        "healthy",
+                        "unavailable"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "alias",
+                    "health"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "target",
+              "resources"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "environments"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "toolchain_doctor",
+    "capability": "toolchain.inspect",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        }
+      },
+      "required": [
+        "profile"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_-]*$"
+              },
+              "version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pathSummary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "repair": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "tool",
+              "version",
+              "pathSummary",
+              "repair"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "tools"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "task_list",
+    "capability": "task.inspect",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_-]*$"
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "taskId",
+              "timeoutSeconds"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "task_run",
+    "capability": "task.run:<id>",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "exitCode": {
+          "type": "integer"
+        },
+        "stdoutSummary": {
+          "type": "string"
+        },
+        "stderrSummary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "exitCode",
+        "stdoutSummary",
+        "stderrSummary"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "connection_test",
+    "capability": "resource.connect:<id>",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        }
+      },
+      "required": [
+        "target",
+        "resource"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "latencyMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "versionSummary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "latencyMs",
+        "versionSummary"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "database_schema",
+    "capability": "database.schema:<id>",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "table": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        }
+      },
+      "required": [
+        "target",
+        "resource"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "table": {
+                "type": "string"
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "nullable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "nullable"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "indexes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "columns"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "table",
+              "columns",
+              "indexes"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "tables"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "database_query",
+    "capability": "database.read:<id>",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "sql": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "target",
+        "resource",
+        "sql"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string"
+              ]
+            }
+          },
+          "maxItems": 200
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "columns",
+        "rows",
+        "truncated"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

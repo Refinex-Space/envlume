@@ -1,0 +1,125 @@
+[
+  {
+    "exitCode": 0,
+    "json": {
+      "schemaVersion": 1,
+      "requestId": "10000000-0000-4000-8000-000000000001",
+      "timestampUtc": "2026-11-23T08:00:00Z",
+      "durationMs": 12,
+      "evidenceId": "20000000-0000-4000-8000-000000000001",
+      "operation": "task_run",
+      "capability": "task.run:30000000-0000-4000-8000-000000000001",
+      "status": "success",
+      "summary": "Completed",
+      "result": {
+        "exitCode": 0,
+        "stdoutSummary": "Tests passed",
+        "stderrSummary": ""
+      },
+      "ok": true,
+      "bindingAlias": "orders-main"
+    },
+    "human": "task_run: Completed\nrequestId: 10000000-0000-4000-8000-000000000001\nexitCode: 0\nevidenceId: 20000000-0000-4000-8000-000000000001"
+  },
+  {
+    "exitCode": 2,
+    "json": {
+      "schemaVersion": 1,
+      "requestId": "10000000-0000-4000-8000-000000000001",
+      "timestampUtc": "2026-11-23T08:00:00Z",
+      "durationMs": 12,
+      "operation": "unknown",
+      "status": "failed",
+      "summary": "Check the tool name and arguments",
+      "errorCode": "INVALID_INPUT",
+      "ok": false
+    },
+    "human": "unknown: Check the tool name and arguments\nrequestId: 10000000-0000-4000-8000-000000000001"
+  },
+  {
+    "exitCode": 3,
+    "json": {
+      "schemaVersion": 1,
+      "requestId": "10000000-0000-4000-8000-000000000001",
+      "timestampUtc": "2026-11-23T08:00:00Z",
+      "durationMs": 12,
+      "operation": "project_context",
+      "status": "denied",
+      "summary": "Review the workspace grant",
+      "errorCode": "POLICY_DENIED",
+      "ok": false,
+      "bindingAlias": "orders-main"
+    },
+    "human": "project_context: Review the workspace grant\nrequestId: 10000000-0000-4000-8000-000000000001"
+  },
+  {
+    "exitCode": 4,
+    "json": {
+      "schemaVersion": 1,
+      "requestId": "10000000-0000-4000-8000-000000000001",
+      "timestampUtc": "2026-11-23T08:00:00Z",
+      "durationMs": 12,
+      "operation": "toolchain_doctor",
+      "status": "failed",
+      "summary": "Select or install the required toolchain",
+      "errorCode": "TOOLCHAIN_MISSING",
+      "capability": "toolchain.inspect",
+      "ok": false,
+      "bindingAlias": "orders-main"
+    },
+    "human": "toolchain_doctor: Select or install the required toolchain\nrequestId: 10000000-0000-4000-8000-000000000001"
+  },
+  {
+    "exitCode": 5,
+    "json": {
+      "schemaVersion": 1,
+      "requestId": "10000000-0000-4000-8000-000000000001",
+      "timestampUtc": "2026-11-23T08:00:00Z",
+      "durationMs": 12,
+      "operation": "connection_test",
+      "status": "failed",
+      "summary": "Check the connection and network policy",
+      "errorCode": "NETWORK_UNREACHABLE",
+      "capability": "resource.connect:40000000-0000-4000-8000-000000000001",
+      "ok": false,
+      "bindingAlias": "orders-main",
+      "targetAlias": "dev"
+    },
+    "human": "connection_test: Check the connection and network policy\nrequestId: 10000000-0000-4000-8000-000000000001"
+  },
+  {
+    "exitCode": 6,
+    "json": {
+      "schemaVersion": 1,
+      "requestId": "10000000-0000-4000-8000-000000000001",
+      "timestampUtc": "2026-11-23T08:00:00Z",
+      "durationMs": 12,
+      "operation": "database_query",
+      "status": "failed",
+      "summary": "Check the operation time limit",
+      "errorCode": "TIMEOUT",
+      "capability": "database.read:40000000-0000-4000-8000-000000000001",
+      "ok": false,
+      "bindingAlias": "orders-main",
+      "targetAlias": "dev"
+    },
+    "human": "database_query: Check the operation time limit\nrequestId: 10000000-0000-4000-8000-000000000001"
+  },
+  {
+    "exitCode": 7,
+    "json": {
+      "schemaVersion": 1,
+      "requestId": "10000000-0000-4000-8000-000000000001",
+      "timestampUtc": "2026-11-23T08:00:00Z",
+      "durationMs": 12,
+      "operation": "project_context",
+      "status": "failed",
+      "summary": "Inspect the local diagnostic record",
+      "errorCode": "INTERNAL_ERROR",
+      "capability": "project.inspect",
+      "ok": false,
+      "bindingAlias": "orders-main"
+    },
+    "human": "project_context: Inspect the local diagnostic record\nrequestId: 10000000-0000-4000-8000-000000000001"
+  }
+]

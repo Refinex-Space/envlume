@@ -1,0 +1,124 @@
+{
+  "project_context": {
+    "arguments": {},
+    "result": {
+      "project": "orders",
+      "workspace": "orders-main",
+      "targets": [
+        "dev"
+      ],
+      "capabilities": [
+        "project.inspect"
+      ]
+    }
+  },
+  "environment_list": {
+    "arguments": {},
+    "result": {
+      "environments": [
+        {
+          "target": "dev",
+          "resources": [
+            {
+              "alias": "primary-db",
+              "health": "unknown"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "toolchain_doctor": {
+    "arguments": {
+      "profile": "default"
+    },
+    "result": {
+      "tools": [
+        {
+          "tool": "jdk",
+          "version": "8",
+          "pathSummary": "selected JDK",
+          "repair": null
+        }
+      ]
+    }
+  },
+  "task_list": {
+    "arguments": {},
+    "result": {
+      "tasks": [
+        {
+          "taskId": "maven-test",
+          "timeoutSeconds": 600
+        }
+      ]
+    }
+  },
+  "task_run": {
+    "arguments": {
+      "taskId": "maven-test"
+    },
+    "result": {
+      "exitCode": 0,
+      "stdoutSummary": "Tests passed",
+      "stderrSummary": ""
+    }
+  },
+  "connection_test": {
+    "arguments": {
+      "target": "dev",
+      "resource": "primary-db"
+    },
+    "result": {
+      "latencyMs": 6,
+      "versionSummary": "MySQL 8"
+    }
+  },
+  "database_schema": {
+    "arguments": {
+      "target": "dev",
+      "resource": "primary-db",
+      "table": "orders"
+    },
+    "result": {
+      "tables": [
+        {
+          "table": "orders",
+          "columns": [
+            {
+              "name": "id",
+              "type": "bigint",
+              "nullable": false
+            }
+          ],
+          "indexes": [
+            {
+              "name": "PRIMARY",
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "database_query": {
+    "arguments": {
+      "target": "dev",
+      "resource": "primary-db",
+      "sql": "SELECT id FROM orders"
+    },
+    "result": {
+      "columns": [
+        "id"
+      ],
+      "rows": [
+        [
+          1
+        ]
+      ],
+      "truncated": false
+    }
+  }
+}

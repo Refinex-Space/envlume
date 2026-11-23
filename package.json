@@ -8,7 +8,10 @@
     "desktop": "pnpm --filter @envlume/desktop tauri",
     "lint": "pnpm --filter @envlume/desktop lint",
     "typecheck": "pnpm --filter @envlume/desktop typecheck",
-    "unit": "pnpm --filter @envlume/desktop unit",
+    "unit": "pnpm --filter @envlume/desktop unit && node --test tests/contracts/schemas.test.mjs",
     "build": "pnpm --filter @envlume/desktop build"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0"
   }
 }

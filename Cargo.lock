@@ -779,6 +779,9 @@ name = "envlume-application"
 version = "0.1.0-dev.1"
 dependencies = [
  "envlume-domain",
+ "serde",
+ "serde_json",
+ "time",
 ]
 
 [[package]]
@@ -793,6 +796,11 @@ dependencies = [
 [[package]]
 name = "envlume-domain"
 version = "0.1.0-dev.1"
+dependencies = [
+ "serde",
+ "time",
+ "uuid",
+]
 
 [[package]]
 name = "equivalent"

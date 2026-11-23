@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "alias": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9_-]*$" }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "ok", "requestId", "timestampUtc", "operation", "durationMs", "status", "summary"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "ok": { "type": "boolean" },
+    "requestId": { "$ref": "#/$defs/id" },
+    "evidenceId": { "$ref": "#/$defs/id" },
+    "timestampUtc": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$" },
+    "operation": { "enum": ["project_context", "environment_list", "toolchain_doctor", "task_list", "task_run", "connection_test", "database_schema", "database_query", "unknown"] },
+    "bindingAlias": { "$ref": "#/$defs/alias" },
+    "targetAlias": { "$ref": "#/$defs/alias" },
+    "capability": { "type": "string" },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "status": { "enum": ["success", "denied", "failed"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "errorCode": { "enum": ["INVALID_INPUT", "PROJECT_NOT_TRUSTED", "BINDING_REVOKED", "TARGET_NOT_ALLOWED", "POLICY_DENIED", "QUERY_NOT_ALLOWED", "TOOLCHAIN_MISSING", "CREDENTIAL_UNAVAILABLE", "NETWORK_UNREACHABLE", "TIMEOUT", "INTERNAL_ERROR"] },
+    "result": { "type": "object" }
+  },
+  "if": { "properties": { "ok": { "const": true } } },
+  "then": {
+    "required": ["result", "capability", "bindingAlias"],
+    "properties": { "status": { "const": "success" }, "operation": { "not": { "const": "unknown" } } },
+    "not": { "required": ["errorCode"] },
+    "if": { "properties": { "operation": { "enum": ["task_run", "connection_test", "database_query"] } } },
+    "then": { "required": ["evidenceId"] }
+  },
+  "else": {
+    "required": ["errorCode"],
+    "properties": { "status": { "enum": ["denied", "failed"] } },
+    "not": { "required": ["result"] }
+  }
+}
