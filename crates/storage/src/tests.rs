@@ -175,7 +175,7 @@ fn newer_or_unrecognized_database_refuses_old_entry_without_modification() {
     paths::create_file(&unknown.database()).unwrap();
     connect(&unknown.database(), true)
         .unwrap()
-        .execute_batch("CREATE TABLE unrelated(x)")
+        .execute_batch("CREATE TABLE sqliteXcatalog(x)")
         .unwrap();
     let before = fs::read(unknown.database()).unwrap();
     assert!(matches!(

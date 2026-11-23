@@ -53,11 +53,7 @@ pub(super) fn version(conn: &Connection) -> Result<i64> {
         .map_err(database_error)?;
     if app == 0 && v == 0 {
         let objects: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get(0))
             .map_err(database_error)?;
         return if objects == 0 {
             Ok(0)
