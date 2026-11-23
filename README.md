@@ -4,7 +4,7 @@ A local-first environment gateway for AI coding agents.
 
 Envlume 面向同时维护多个项目的开发者。每个工作区可以分别指定本机工具链、可访问的环境资源，以及允许 AI 执行的构建和测试任务。目标是让 AI 知道当前项目该用哪个 JDK、能查哪个数据库，并让开发者拿到可以复核的执行结果。
 
-**当前可从源码启动桌面 Shell，并用独立 CLI 查询版本。** v0.1 的项目绑定、资源访问、MCP 服务和安装包按任务卡逐步交付。[查看交付进度](docs/plan/PLAN.md)
+**当前可从源码启动桌面 Shell，并通过桌面命令和独立 CLI 读取本地 SQLite 项目目录。** v0.1 的项目绑定、资源访问、MCP 服务和安装包按任务卡逐步交付。[查看交付进度](docs/plan/PLAN.md)
 
 ## v0.1 的使用场景
 
@@ -81,7 +81,7 @@ pnpm desktop build --debug --no-bundle -- --locked
 | macOS Intel | `x86_64-apple-darwin` |
 | Windows x64 | `x86_64-pc-windows-msvc` |
 
-`crates/domain` 只承载领域模型，`crates/application` 供 `crates/cli` 和 `apps/desktop/src-tauri` 共用，React 界面位于 `apps/desktop/src`。T01 Shell 仅展示本地内容，主窗口 capability 的权限列表为空。CI 还执行 RustSec 漏洞检查、Rust 与前端依赖许可证扫描和 Git 历史秘密扫描。[威胁与验收编号](docs/architecture/threat-tests.md) · [T01 执行记录](docs/plan/tasks/T01-workspace-ci.md)
+`crates/domain` 只承载领域模型，`crates/application` 供 `crates/cli` 和 `apps/desktop/src-tauri` 共用，React 界面位于 `apps/desktop/src`。主窗口的 capability 只允许调用本地只读命令 `list_projects`。CLI 的 `envlume project list --json` 返回同一份项目 ID 和名称，新库返回空列表。CI 还执行 RustSec 漏洞检查、Rust 与前端依赖许可证扫描和 Git 历史秘密扫描。[威胁与验收编号](docs/architecture/threat-tests.md) · [T03 迁移、恢复与权限验收](docs/plan/tasks/T03-sqlite-and-shared-state.md)
 
 ## 许可证
 
