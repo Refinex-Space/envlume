@@ -37,7 +37,7 @@
 | [T01 建立工作区和三目标构建](tasks/T01-workspace-ci.md) | 工作区、三目标 CI、ADR 与质量门 | — | 已完成 |
 | [T02 冻结领域模型与入口契约](tasks/T02-domain-contracts.md) | 领域类型、权限词汇与可执行契约 | T01 | 已完成 |
 | [T03 建立 SQLite 存储、迁移与恢复](tasks/T03-sqlite-and-shared-state.md) | 共享数据库、迁移与恢复 | T02 | 已完成 |
-| [T04 打通独立 STDIO 进程](tasks/T04-mcp-stdio-skeleton.md) | 独立 STDIO 与受控模拟响应 | T03 | 待开始 |
+| [T04 打通独立 STDIO 进程](tasks/T04-mcp-stdio-skeleton.md) | 独立 STDIO 与受控模拟响应 | T03 | 已完成 |
 | [R0 验收骨架与契约](tasks/R0-foundation-review.md) | 同库双入口、模拟协议和编译证据 | T04 | 待开始 |
 
 ### Phase 1 · 项目与工具链
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| T04 待开始 | [T03-A01–A03](tasks/T03-sqlite-and-shared-state.md#执行记录) 通过；修订 `ca81655`，可用 `cargo test --locked -p envlume-storage` 复跑 | 将模拟 project_context 接到独立 STDIO 进程，验证协议协商与 stdout | [T04 独立 STDIO](tasks/T04-mcp-stdio-skeleton.md) |
+| R0 待评审 | [T04-A01–A03](tasks/T04-mcp-stdio-skeleton.md#执行记录) 本机通过；修订 `a7b9c80`，可用 `cargo test --locked -p envlume --test stdio` 复跑 | 复核同库双入口、隔离夹具的 STDIO 实录以及同一修订的三目标构建 | [R0 基础评审](tasks/R0-foundation-review.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 

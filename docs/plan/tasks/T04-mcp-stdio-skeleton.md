@@ -30,4 +30,18 @@ Phase 0 · 工程与契约　·　[返回交付总表](../PLAN.md)
 
 ## 执行记录
 
-待执行。收尾时登记修订、平台/版本、实际命令或操作、对应验收编号、结果与脱敏证据位置。
+### 2026-11-24 · 本地验收
+
+实现修订 `a7b9c80`，基于 T03 的 `29f3acc`。环境为 macOS 26.5.2 arm64、Rust 1.99.1、Node 24.14.1，官方 Rust SDK 锁定为 `rmcp 3.11.0`。复跑命令为 `cargo test --locked -p envlume --test stdio`。[测试环境与复跑说明](../../../tests/contracts/stdio/README.md) · [逐帧实录](../../../tests/contracts/stdio/transcript.jsonl)
+
+| 验收 | 实际操作与结果 |
+|---|---|
+| T04-A01 | 在临时 SQLite 注册表预置一个测试 binding，以独立 CLI 测试子进程运行共用入口。客户端在发现列表中仅收到 `project_context`，调用返回 T02 夹具的 `orders / orders-main / dev / project.inspect`。额外传入 `projectId`、`bindingId` 或 `cwd` 均返回 `INVALID_INPUT`。撤销 grant 后列表为空，直接调用同一工具得到 `POLICY_DENIED`。常规二进制与测试子进程均在两种握手流程中对未知绑定返回 `PROJECT_NOT_TRUSTED`。 |
+| T04-A02 · SEC-010 | 测试客户端解析完整 stdout，包括末尾换行及退出前所有字节。普通启动日志和握手诊断出现在 stderr；正常结果、输入错误、工具拒绝都有可解析的响应帧。两次成功会话关闭 stdin 后退出码为 0。 |
+| T04-A03 | 会话活跃期间使用 `lsof` 检查网络套接字、用 `pgrep` 检查子进程，均无结果。缺少必需 metadata 的请求收到协议错误，错误首部序列以退出码 2 结束，stderr 诊断未回显测试标记及本机路径。 |
+
+**协议版本。** 架构参考版本 `2026-07-28` 已用 `server/discover` 和逐请求 metadata 实测；未支持的版本收到 `-32022` 后可继续使用参考版本。旧版 `initialize` 实测协商为 `2025-11-25`。以上结果来自仓库契约客户端，Claude Code、Codex 和 Cursor 的实际兼容性分别在 T16–T18 验收。
+
+**质量门。** `cargo fmt --all --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --locked`、`cargo build --workspace --locked` 均通过。前端锁定安装、lint、typecheck、unit 和 build 通过。`cargo deny --locked check licenses` 通过。`cargo audit` 退出 0，保留此前登记的三条通告，其中 `chrono` 的维护状态通告现在也涉及 CLI 的 rmcp 依赖链。
+
+**交接。** 生产入口默认拒绝绑定，成功的项目摘要仅由测试注册表及 application 替身提供。R0 复跑 T01–T04，并核对同一修订的三目标编译证据；T05 再接真实工作区解析。本节的平台结果仅覆盖 Apple Silicon。
