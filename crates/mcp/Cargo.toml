@@ -1,0 +1,12 @@
+[package]
+name = "envlume-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+envlume-application.workspace = true
+rmcp = { version = "3.11.0", default-features = false, features = ["server"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "io-std"] }

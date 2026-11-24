@@ -1,0 +1,69 @@
+{"stream":"process","message":{"program":"fixture-cli","args":["mcp","--binding","44444444-4444-4444-8444-444444444444"]}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"envlume-contract","version":"1"},"capabilities":{}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"envlume","version":"0.1.0-dev.1"}}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","method":"notifications/initialized"}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"project_context","description":"Inspect the registered workspace context.","inputSchema":{"additionalProperties":false,"properties":{},"required":[],"type":"object"}}]}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"project_context","arguments":{}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"bindingAlias\":\"orders-main\",\"capability\":\"project.inspect\",\"durationMs\":1,\"ok\":true,\"operation\":\"project_context\",\"requestId\":\"07977be9-d49d-45cd-a65d-2271ed8e82cf\",\"result\":{\"capabilities\":[\"project.inspect\"],\"project\":\"orders\",\"targets\":[\"dev\"],\"workspace\":\"orders-main\"},\"schemaVersion\":1,\"status\":\"success\",\"summary\":\"Completed\",\"timestampUtc\":\"2026-11-24T04:25:28.777515Z\"}"}],"structuredContent":{"bindingAlias":"orders-main","capability":"project.inspect","durationMs":1,"ok":true,"operation":"project_context","requestId":"07977be9-d49d-45cd-a65d-2271ed8e82cf","result":{"capabilities":["project.inspect"],"project":"orders","targets":["dev"],"workspace":"orders-main"},"schemaVersion":1,"status":"success","summary":"Completed","timestampUtc":"2026-11-24T04:25:28.777515Z"},"isError":false}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"project_context","arguments":{"projectId":"TEST_ONLY_PRIVATE_INPUT"}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":4,"result":{"content":[{"type":"text","text":"{\"durationMs\":0,\"errorCode\":\"INVALID_INPUT\",\"ok\":false,\"operation\":\"project_context\",\"requestId\":\"1c1a47e5-0299-4d6f-8b59-1ac526ea14ab\",\"schemaVersion\":1,\"status\":\"failed\",\"summary\":\"Check the tool name and arguments\",\"timestampUtc\":\"2026-11-24T04:25:28.779038Z\"}"}],"structuredContent":{"durationMs":0,"errorCode":"INVALID_INPUT","ok":false,"operation":"project_context","requestId":"1c1a47e5-0299-4d6f-8b59-1ac526ea14ab","schemaVersion":1,"status":"failed","summary":"Check the tool name and arguments","timestampUtc":"2026-11-24T04:25:28.779038Z"},"isError":true}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"project_context","arguments":{"bindingId":"TEST_ONLY_PRIVATE_INPUT"}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":5,"result":{"content":[{"type":"text","text":"{\"durationMs\":0,\"errorCode\":\"INVALID_INPUT\",\"ok\":false,\"operation\":\"project_context\",\"requestId\":\"eb47bddd-ebee-4ce6-bbb1-46da4706ea03\",\"schemaVersion\":1,\"status\":\"failed\",\"summary\":\"Check the tool name and arguments\",\"timestampUtc\":\"2026-11-24T04:25:28.779262Z\"}"}],"structuredContent":{"durationMs":0,"errorCode":"INVALID_INPUT","ok":false,"operation":"project_context","requestId":"eb47bddd-ebee-4ce6-bbb1-46da4706ea03","schemaVersion":1,"status":"failed","summary":"Check the tool name and arguments","timestampUtc":"2026-11-24T04:25:28.779262Z"},"isError":true}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"project_context","arguments":{"cwd":"TEST_ONLY_PRIVATE_INPUT"}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":6,"result":{"content":[{"type":"text","text":"{\"durationMs\":0,\"errorCode\":\"INVALID_INPUT\",\"ok\":false,\"operation\":\"project_context\",\"requestId\":\"4fd5b6da-9168-4f5a-910e-4d3f49855b86\",\"schemaVersion\":1,\"status\":\"failed\",\"summary\":\"Check the tool name and arguments\",\"timestampUtc\":\"2026-11-24T04:25:28.779486Z\"}"}],"structuredContent":{"durationMs":0,"errorCode":"INVALID_INPUT","ok":false,"operation":"project_context","requestId":"4fd5b6da-9168-4f5a-910e-4d3f49855b86","schemaVersion":1,"status":"failed","summary":"Check the tool name and arguments","timestampUtc":"2026-11-24T04:25:28.779486Z"},"isError":true}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"task_run","arguments":{}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":7,"error":{"code":-32602,"message":"Unknown tool"}}}
+{"stream":"stderr","message":"Envlume MCP: starting STDIO"}
+{"stream":"exit","message":0}
+{"stream":"process","message":{"program":"fixture-cli","args":["mcp","--binding","44444444-4444-4444-8444-444444444444"]}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"envlume-contract","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","supportedVersions":["2024-11-05","2025-03-26","2025-06-18","2025-11-25","2026-07-28"],"capabilities":{"tools":{}},"ttlMs":0,"cacheScope":"private","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"envlume","version":"0.1.0-dev.1"}}}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2999-01-01","io.modelcontextprotocol/clientInfo":{"name":"envlume-contract","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":2,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"requested":"2999-01-01","supported":["2024-11-05","2025-03-26","2025-06-18","2025-11-25","2026-07-28"]}}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"envlume-contract","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":3,"result":{"resultType":"complete","ttlMs":0,"cacheScope":"private","tools":[{"name":"project_context","description":"Inspect the registered workspace context.","inputSchema":{"additionalProperties":false,"properties":{},"required":[],"type":"object"}}]}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"project_context","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"envlume-contract","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":4,"result":{"resultType":"complete","content":[{"type":"text","text":"{\"bindingAlias\":\"orders-main\",\"capability\":\"project.inspect\",\"durationMs\":0,\"ok\":true,\"operation\":\"project_context\",\"requestId\":\"88773414-7459-4a9e-adbb-b054da4ae9b5\",\"result\":{\"capabilities\":[\"project.inspect\"],\"project\":\"orders\",\"targets\":[\"dev\"],\"workspace\":\"orders-main\"},\"schemaVersion\":1,\"status\":\"success\",\"summary\":\"Completed\",\"timestampUtc\":\"2026-11-24T04:25:28.921114Z\"}"}],"structuredContent":{"bindingAlias":"orders-main","capability":"project.inspect","durationMs":0,"ok":true,"operation":"project_context","requestId":"88773414-7459-4a9e-adbb-b054da4ae9b5","result":{"capabilities":["project.inspect"],"project":"orders","targets":["dev"],"workspace":"orders-main"},"schemaVersion":1,"status":"success","summary":"Completed","timestampUtc":"2026-11-24T04:25:28.921114Z"},"isError":false}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":5,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"envlume-contract","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":5,"result":{"resultType":"complete","ttlMs":0,"cacheScope":"private","tools":[]}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"project_context","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"envlume-contract","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":6,"result":{"resultType":"complete","content":[{"type":"text","text":"{\"bindingAlias\":\"orders-main\",\"durationMs\":1,\"errorCode\":\"POLICY_DENIED\",\"ok\":false,\"operation\":\"project_context\",\"requestId\":\"a67f7448-c764-48cb-8dbd-bf444cece094\",\"schemaVersion\":1,\"status\":\"denied\",\"summary\":\"Review the workspace grant\",\"timestampUtc\":\"2026-11-24T04:25:28.925705Z\"}"}],"structuredContent":{"bindingAlias":"orders-main","durationMs":1,"errorCode":"POLICY_DENIED","ok":false,"operation":"project_context","requestId":"a67f7448-c764-48cb-8dbd-bf444cece094","schemaVersion":1,"status":"denied","summary":"Review the workspace grant","timestampUtc":"2026-11-24T04:25:28.925705Z"},"isError":true}}}
+{"stream":"stderr","message":"Envlume MCP: starting STDIO"}
+{"stream":"exit","message":0}
+{"stream":"process","message":{"program":"envlume","args":["mcp","--binding","aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"envlume-contract","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Verify workspace trust","data":{"errorCode":"PROJECT_NOT_TRUSTED"}}}}
+{"stream":"stderr","message":"Envlume MCP: starting STDIO"}
+{"stream":"stderr","message":"Envlume MCP: handshake failed"}
+{"stream":"stderr","message":"Verify workspace trust"}
+{"stream":"exit","message":3}
+{"stream":"process","message":{"program":"envlume","args":["mcp","--binding","aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"envlume-contract","version":"1"},"capabilities":{}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Verify workspace trust","data":{"errorCode":"PROJECT_NOT_TRUSTED"}}}}
+{"stream":"stderr","message":"Envlume MCP: starting STDIO"}
+{"stream":"stderr","message":"Envlume MCP: handshake failed"}
+{"stream":"stderr","message":"Verify workspace trust"}
+{"stream":"exit","message":3}
+{"stream":"process","message":{"program":"fixture-cli","args":["mcp","--binding","aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"envlume-contract","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Verify workspace trust","data":{"errorCode":"PROJECT_NOT_TRUSTED"}}}}
+{"stream":"stderr","message":"Envlume MCP: starting STDIO"}
+{"stream":"stderr","message":"Envlume MCP: handshake failed"}
+{"stream":"stderr","message":"Verify workspace trust"}
+{"stream":"exit","message":3}
+{"stream":"process","message":{"program":"fixture-cli","args":["mcp","--binding","aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"envlume-contract","version":"1"},"capabilities":{}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Verify workspace trust","data":{"errorCode":"PROJECT_NOT_TRUSTED"}}}}
+{"stream":"stderr","message":"Envlume MCP: starting STDIO"}
+{"stream":"stderr","message":"Envlume MCP: handshake failed"}
+{"stream":"stderr","message":"Verify workspace trust"}
+{"stream":"exit","message":3}
+{"stream":"process","message":{"program":"fixture-cli","args":["mcp","--binding","44444444-4444-4444-8444-444444444444"]}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/clientInfo":"TEST_ONLY_PRIVATE_INPUT"}}}}
+{"stream":"stdout","message":{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"request _meta is missing or has malformed required fields: io.modelcontextprotocol/protocolVersion, io.modelcontextprotocol/clientCapabilities"}}}
+{"stream":"stdin","message":{"jsonrpc":"2.0","method":"notifications/initialized","params":{"_meta":{"note":"TEST_ONLY_PRIVATE_INPUT"}}}}
+{"stream":"stderr","message":"Envlume MCP: starting STDIO"}
+{"stream":"stderr","message":"Envlume MCP: handshake failed"}
+{"stream":"stderr","message":"Check the tool name and arguments"}
+{"stream":"exit","message":2}

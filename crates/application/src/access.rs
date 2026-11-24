@@ -4,8 +4,8 @@ use serde_json::Value;
 use std::time::Instant;
 
 /// A trusted local entry point selects the binding. Never deserialize this from tool arguments.
-pub struct Session<'a, R> {
-    repository: &'a R,
+pub struct Session<R> {
+    repository: R,
     binding: BindingId,
     project: ProjectId,
     actor: Actor,
@@ -34,19 +34,33 @@ fn trusted(repository: &impl Repository, id: BindingId) -> Result<BindingSnapsho
     }
 }
 
-impl<'a, R: Repository> Session<'a, R> {
+impl<R: Repository> Session<R> {
     pub fn from_registration(
-        repository: &'a R,
+        repository: R,
         binding: BindingId,
         actor: Actor,
     ) -> Result<Self, ErrorCode> {
-        let state = trusted(repository, binding)?;
+        let state = trusted(&repository, binding)?;
         Ok(Self {
             repository,
             binding,
             project: state.project.id,
             actor,
         })
+    }
+
+    fn snapshot(&self) -> Result<BindingSnapshot, ErrorCode> {
+        let state = trusted(&self.repository, self.binding)?;
+        if state.project.id != self.project {
+            return Err(ErrorCode::ProjectNotTrusted);
+        }
+        Ok(state)
+    }
+
+    pub fn can_inspect_project(&self) -> Result<bool, ErrorCode> {
+        Ok(self
+            .snapshot()?
+            .has_grant(Capability::ProjectInspect, UtcDateTime::now()))
     }
 
     pub fn invoke(&self, cases: &impl UseCases, name: &str, arguments: Value) -> Report {
@@ -79,10 +93,7 @@ impl<'a, R: Repository> Session<'a, R> {
         };
         let response = (|| {
             let call = ToolCall::parse(name, arguments)?;
-            let state = trusted(self.repository, self.binding)?;
-            if state.project.id != self.project {
-                return Err(ErrorCode::ProjectNotTrusted.into());
-            }
+            let state = self.snapshot()?;
             report.binding_alias = Some(state.binding.alias.clone());
             let operation = Resolved::resolve(&call, &state)?;
             let capability = operation.capability();

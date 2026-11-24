@@ -32,6 +32,12 @@ pub trait Repository {
     fn load_binding(&self, binding: BindingId) -> Result<Option<BindingSnapshot>, ErrorCode>;
 }
 
+impl<R: Repository + ?Sized> Repository for &R {
+    fn load_binding(&self, binding: BindingId) -> Result<Option<BindingSnapshot>, ErrorCode> {
+        (**self).load_binding(binding)
+    }
+}
+
 /// A registered endpoint selected by an authorized remote operation. A caller
 /// holding just an alias, a credential reference or a local record cannot mint it.
 pub struct AuthorizedResource<'a> {

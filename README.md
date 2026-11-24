@@ -4,7 +4,7 @@ A local-first environment gateway for AI coding agents.
 
 Envlume 面向同时维护多个项目的开发者。每个工作区可以分别指定本机工具链、可访问的环境资源，以及允许 AI 执行的构建和测试任务。目标是让 AI 知道当前项目该用哪个 JDK、能查哪个数据库，并让开发者拿到可以复核的执行结果。
 
-**当前可从源码启动桌面 Shell，并通过桌面命令和独立 CLI 读取本地 SQLite 项目目录。** v0.1 的项目绑定、资源访问、MCP 服务和安装包按任务卡逐步交付。[查看交付进度](docs/plan/PLAN.md)
+**当前可从源码启动桌面 Shell，并通过桌面命令和独立 CLI 读取本地 SQLite 项目目录。** 独立 MCP STDIO 骨架可在隔离夹具中验证 `project_context`；真实工作区绑定、资源访问和安装包按任务卡逐步交付。[查看交付进度](docs/plan/PLAN.md)
 
 ## v0.1 的使用场景
 
@@ -55,6 +55,10 @@ pnpm desktop dev
 ```
 
 CLI 应输出 `envlume 0.1.0-dev.1`。桌面窗口启动后可展开“查看命令行版本”。开发服务器仅监听 `http://127.0.0.1:1420`。按 Ctrl+C 结束开发会话，只预览 Web 界面可用 `pnpm dev`。
+
+### 验证独立 MCP 进程
+
+从仓库根目录运行 `cargo test --locked -p envlume --test stdio`，测试会建立临时注册表并启动 CLI 子进程，验证协议协商、工具发现、模拟项目摘要和关闭行为。常规入口为 `envlume mcp --binding <UUID>`，生产绑定解析在 T05 接入，当前默认拒绝访问。[测试与协议实录](tests/contracts/stdio/README.md)
 
 ### 构建与验证
 
