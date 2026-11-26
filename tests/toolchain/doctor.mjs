@@ -114,6 +114,9 @@ const doctor = (cwd, binding) =>
   cli(cwd, "doctor", "--binding", binding.bindingId);
 const get = (report, tool) => report.result.tools.find((t) => t.tool === tool);
 const before = JSON.stringify(env);
+const humanHost = command(exe, ["doctor"], first);
+assert.match(humanHost, /<jdk-home>[/\\]bin[/\\]java/);
+assert.ok(humanHost.includes("constraint *") && !humanHost.includes(canary));
 const host = cli(first, "doctor");
 assert.equal(host.tools.find((t) => t.tool === "jdk").version, "21.0.4");
 assert.ok(!JSON.stringify(host).includes(canary));

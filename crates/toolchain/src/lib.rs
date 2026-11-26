@@ -40,7 +40,7 @@ pub struct Selection {
     pub java_home: Option<PathBuf>,
 }
 impl Selection {
-    fn projection(&self) -> ToolDiagnostic {
+    pub fn description(&self) -> String {
         let mut summary = format!(
             "{}; constraint {} ({}); {}",
             self.source, self.requirement, self.constraint_source, self.status
@@ -52,10 +52,13 @@ impl Selection {
             summary.push_str("; ");
             summary.push_str(detail);
         }
+        summary
+    }
+    fn projection(&self) -> ToolDiagnostic {
         ToolDiagnostic {
             tool: Alias::try_from(self.tool.to_owned()).unwrap(),
             version: self.version.clone(),
-            path_summary: Some(summary),
+            path_summary: Some(self.description()),
             repair: self.repair.clone(),
         }
     }

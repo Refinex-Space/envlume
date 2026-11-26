@@ -58,12 +58,10 @@ fn execute(
             } else {
                 for t in report.tools {
                     println!(
-                        "{}\t{}\t{}\t{} {}",
+                        "{}\t{}\t{}",
                         t.tool,
-                        t.status,
                         t.version.as_deref().unwrap_or("-"),
-                        t.source,
-                        t.details.join("; ")
+                        t.description()
                     );
                     if let Some(action) = t.repair {
                         println!("  {action}");

@@ -4,7 +4,7 @@ A local-first environment gateway for AI coding agents.
 
 Envlume 面向同时维护多个项目的开发者。每个工作区可以分别指定本机工具链、可访问的环境资源，以及允许 AI 执行的构建和测试任务。目标是让 AI 知道当前项目该用哪个 JDK、能查哪个数据库，并让开发者拿到可以复核的执行结果。
 
-**当前可从源码启动桌面 Shell，并通过桌面命令和独立 CLI 读取本地 SQLite 项目目录。** CLI 可导入本地工作区、确认和撤销信任；独立 MCP 进程返回该绑定当前获准的项目摘要。[查看交付进度](docs/plan/PLAN.md)
+**当前可从源码启动桌面 Shell，并通过桌面命令和独立 CLI 读取本地 SQLite 项目目录。** CLI 可导入本地工作区、确认和撤销信任；独立 MCP 进程返回该绑定当前获准的项目摘要和工具链诊断。[查看交付进度](docs/plan/PLAN.md)
 
 ## v0.1 的使用场景
 
@@ -74,6 +74,19 @@ envlume project delete --project <project-id>
 将 MCP 客户端的启动目录设为已确认的工作区根目录，启动命令为 `envlume mcp --binding <binding-id>`。服务从当前用户的本地注册表读取确认来源，并在每次发现和调用时核验目录身份及授权。工作目录被移动、替换或所选链接改指后，旧绑定进入 `STALE`。重新确认会分配新 ID。Windows 支持本地磁盘的 junction，拒绝 UNC、映射网络盘和设备路径。
 
 运行 `cargo test --locked -p envlume --test workspace_trust` 可在临时目录复跑真实注册、终端确认和运行中撤权。`cargo test --locked -p envlume --test stdio` 保留 Phase 0 的模拟协议回归。[T05 任务及验收](docs/plan/tasks/T05-workspace-trust.md) · [STDIO 契约实录](tests/contracts/stdio/README.md)
+
+### 选择和诊断本机工具链
+
+`envlume doctor --json` 查看主机上可发现的工具。要为项目选择版本，在已确认的工作区根目录执行以下命令，将占位符换成本机值。带空格的路径用引号包住。
+
+```sh
+envlume toolchain configure --binding <binding-id> --profile default --tool jdk 8 --path "<JDK Home>" --tool maven 3.9 --path "<Maven Home>"
+envlume doctor --binding <binding-id> --profile default --json
+```
+
+`configure` 会预览这次指定的全部规则，输入 `configure` 后原子保存、选中 profile，并仅向当前 binding 授予 `toolchain.inspect`。可重复使用 `--tool <名称> <版本约束> [--path <绝对路径>]`；省略规则则使用项目约定和本机发现。修改另一已信任绑定正在使用的同名 profile 时，请改用新的 profile 名称。MCP 的 `tools/list` 只向获准的绑定列出 `toolchain_doctor`，参数示例为 `{"profile":"default"}`。
+
+解析依次使用显式路径、持久化版本约束或经确认的 mise 静态版本、项目约定、本机安装。显式路径失效后，报告会提示修复。可选的 `--mise` 读取当前项目 `mise.toml` 或 `.mise.toml` 的 `[tools]` 数字版本并保存快照；修改文件后须再次确认才会更新。诊断只读取 wrapper 元数据和 Maven settings 的存在状态。报告中的路径已摘要化，`repair` 给出需要执行的操作。[T06 验收与支持范围](docs/plan/tasks/T06-toolchain-doctor.md)
 
 ### 构建与验证
 
