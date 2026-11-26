@@ -69,7 +69,7 @@ envlume project revoke --binding <binding-id>
 envlume project delete --project <project-id>
 ```
 
-首次导入先显示所选路径、真实目录、Git 类型、构建文件提示和申请的权限。在终端输入 `trust` 确认后只授予 `project.inspect`。每次导入默认新建逻辑项目；可通过 `--project` 把另一个工作目录归入已有项目。每个目录独立确认和授权。软删除项目需输入 `delete`，其全部绑定和 grant 随事务撤销。
+首次导入先显示所选路径、真实目录、Git 类型、构建文件提示和申请的权限。在终端输入 `trust` 确认后只授予 `project.inspect`。每次导入默认新建逻辑项目；可通过 `--project` 把另一个工作目录归入已有项目。每个目录独立确认和授权。重复导入身份未变的已信任目录会返回原绑定，已撤销的 grant 保持撤销。软删除项目需输入 `delete`，其全部绑定和 grant 随事务撤销。
 
 将 MCP 客户端的启动目录设为已确认的工作区根目录，启动命令为 `envlume mcp --binding <binding-id>`。服务从当前用户的本地注册表读取确认来源，并在每次发现和调用时核验目录身份及授权。工作目录被移动、替换或所选链接改指后，旧绑定进入 `STALE`。重新确认会分配新 ID。Windows 支持本地磁盘的 junction，拒绝 UNC、映射网络盘和设备路径。
 

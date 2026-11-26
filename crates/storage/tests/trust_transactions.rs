@@ -198,3 +198,29 @@ fn real_context_filters_the_current_grants_and_private_resource_metadata() {
     assert_eq!(after["result"]["targets"], json!([]));
     assert_eq!(after["result"]["capabilities"], json!(["project.inspect"]));
 }
+
+#[test]
+fn repeated_import_of_unchanged_binding_does_not_prompt_or_regrant_access() {
+    let (_tmp, paths, store, path) = fixture();
+    let registered = add_project(&store, &path, None, |_, _| true).unwrap();
+    let db = Connection::open(paths.database()).unwrap();
+    db.execute(
+        "UPDATE capability_grants SET revoked_at=0 WHERE binding_id=?1",
+        [registered.binding_id.0],
+    )
+    .unwrap();
+    let again = add_project(&store, &path, Some(registered.project_id), |_, _| {
+        panic!("unchanged registration prompted again")
+    })
+    .unwrap();
+    assert_eq!(again.binding_id, registered.binding_id);
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM capability_grants WHERE revoked_at IS NULL",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
+}

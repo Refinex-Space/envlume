@@ -106,6 +106,17 @@ pub fn add_project(
     confirm: impl FnOnce(&Workspace, Option<ProjectId>) -> bool,
 ) -> Result<BindingInfo, ManagementError> {
     let before = envlume_workspace::discover(path).map_err(|_| ManagementError::InvalidPath)?;
+    // An unchanged registration is a read. Retrying must never recreate a revoked grant.
+    match repo.inspect_binding(&before.entry_path, Some(&before)) {
+        Ok(binding) if binding.state == "TRUSTED" && binding.matches(&before) => {
+            if project.is_some_and(|id| id != binding.project_id) {
+                return Err(ManagementError::ProjectMismatch);
+            }
+            return Ok(binding);
+        }
+        Ok(_) | Err(ManagementError::NotFound) => (),
+        Err(error) => return Err(error),
+    }
     if !confirm(&before, project) {
         return Err(ManagementError::ConfirmationRequired);
     }

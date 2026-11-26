@@ -68,9 +68,6 @@ fn execute(
                 [flag, id] if flag == "--project" => Some(project_id(id)?),
                 _ => return Err(ManagementError::InvalidPath),
             };
-            if !(io::stdin().is_terminal() && io::stderr().is_terminal()) {
-                return Err(ManagementError::ConfirmationRequired);
-            }
             let result = add_project(&open()?, Path::new(path), project, |ws, p| {
                 let project = p.map_or_else(|| "new project".into(), |id| id.0.to_string());
                 confirm(

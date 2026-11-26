@@ -108,7 +108,7 @@ const worktree = add(tree, a.projectId);
 assert.equal(worktree.workspace.gitKind, "worktree");
 assert.equal(worktree.binding.projectId, a.projectId);
 assert.notEqual(worktree.binding.bindingId, a.bindingId);
-assert.equal(add(primary).binding.bindingId, a.bindingId);
+assert.equal(cli("project", "add", primary).binding.bindingId, a.bindingId);
 console.log(
   "CLI registration:",
   JSON.stringify({
@@ -271,7 +271,10 @@ assert.equal(
 );
 const caseAlias = join(root, "MOVED");
 if (existsSync(caseAlias)) {
-  assert.equal(add(caseAlias).binding.bindingId, afterMove.bindingId);
+  assert.equal(
+    cli("project", "add", caseAlias).binding.bindingId,
+    afterMove.bindingId,
+  );
   console.log(
     "Native case-insensitive path alias resolved to the same binding",
   );
