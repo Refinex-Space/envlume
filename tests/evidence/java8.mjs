@@ -44,6 +44,23 @@ function fixtureBinary() {
 const helper = process.argv[2] ? resolve(process.argv[2]) : fixtureBinary();
 const java = process.env.T08_JAVA8_HOME;
 assert.ok(java, "Set T08_JAVA8_HOME to a complete Java 8 JDK.");
+for (const tool of ["java", "javac"]) {
+	const exe = join(
+		java,
+		"bin",
+		process.platform === "win32" ? tool + ".exe" : tool,
+	);
+	const probe = spawnSync(exe, ["-version"], {
+		encoding: "utf8",
+		timeout: 60000,
+	});
+	assert.equal(
+		probe.status,
+		0,
+		"The supplied JDK must have working java and javac.",
+	);
+	assert.match(probe.stdout + probe.stderr, /1\.8\.0_\d+/);
+}
 const base = mkdtempSync(join(tmpdir(), "envlume-T08-"));
 const cwd = join(base, "Java 8 Spring Boot");
 const env = { ...process.env, T05_FIXTURE_STORE: join(base, "state") };
