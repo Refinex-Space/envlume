@@ -235,12 +235,15 @@ fn child_environment(
         env.insert("WINDIR".into(), windows.as_os_str().to_owned());
         env.insert(
             "ComSpec".into(),
-            windows.join("System32/cmd.exe").into_os_string(),
+            windows.join("System32").join("cmd.exe").into_os_string(),
         );
         env.insert("PATHEXT".into(), ".COM;.EXE;.BAT;.CMD".into());
         path.extend([
             windows.join("System32"),
-            windows.join("System32/WindowsPowerShell/v1.0"),
+            windows
+                .join("System32")
+                .join("WindowsPowerShell")
+                .join("v1.0"),
         ]);
         env.insert("USERPROFILE".into(), home.as_os_str().to_owned());
         env.insert("APPDATA".into(), home.as_os_str().to_owned());
@@ -327,7 +330,7 @@ pub fn prepare(
                 );
                 #[cfg(windows)]
                 let command = (
-                    system_root()?.join("System32/cmd.exe"),
+                    system_root()?.join("System32").join("cmd.exe"),
                     vec![
                         "/d".into(),
                         "/v:off".into(),
@@ -504,6 +507,9 @@ mod windows_tests {
             std::thread::yield_now();
         };
         assert!(status.success(), "Synthetic installed npm failed: {stderr}");
-        assert!(stdout.contains("fixture-built"));
+        assert!(
+            stdout.contains("fixture-built"),
+            "Synthetic npm lifecycle output: {stdout} {stderr}"
+        );
     }
 }
