@@ -61,7 +61,11 @@ pub trait ResourceConnector {
     ) -> Result<ConnectionResult, ErrorCode>;
 }
 pub trait ToolchainInspector {
-    fn diagnose(&self, profile: &ToolchainProfile) -> Result<Vec<ToolDiagnostic>, ErrorCode>;
+    fn diagnose(
+        &self,
+        workspace: &std::path::Path,
+        profile: &ToolchainProfile,
+    ) -> Result<Vec<ToolDiagnostic>, ErrorCode>;
 }
 
 pub struct UseCaseFailure {

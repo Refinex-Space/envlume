@@ -12,6 +12,7 @@ pub enum ManagementError {
     WorkspaceChanged,
     NotFound,
     ProjectMismatch,
+    SharedProfile,
     Storage(StorageError),
 }
 impl From<StorageError> for ManagementError {
@@ -36,6 +37,11 @@ impl ManagementError {
             Self::WorkspaceChanged => (
                 "PROJECT_NOT_TRUSTED",
                 "Workspace identity changed; inspect and confirm again.",
+                3,
+            ),
+            Self::SharedProfile => (
+                "POLICY_DENIED",
+                "Another binding uses this profile; choose a new profile name.",
                 3,
             ),
             Self::ProjectMismatch => (

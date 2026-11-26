@@ -42,6 +42,14 @@ pub fn entry_path(path: &Path) -> io::Result<PathBuf> {
     Ok(path.components().collect())
 }
 
+/// Resolve a local filesystem object using the same Windows drive/reparse checks as binding discovery.
+pub fn local_canonical(path: &Path) -> io::Result<PathBuf> {
+    let path = entry_path(path)?;
+    #[cfg(windows)]
+    windows_paths::check_local_chain(&path, 0)?;
+    path.canonicalize()
+}
+
 fn identity(path: &Path) -> io::Result<String> {
     let key = match get_file_id(path)? {
         FileId::Inode {
@@ -66,9 +74,7 @@ fn identity(path: &Path) -> io::Result<String> {
 
 pub fn discover(path: &Path) -> io::Result<Workspace> {
     let entry_path = entry_path(path)?;
-    #[cfg(windows)]
-    windows_paths::check_local_chain(&entry_path, 0)?;
-    let canonical_path = entry_path.canonicalize()?;
+    let canonical_path = local_canonical(&entry_path)?;
     if !canonical_path.is_dir() || canonical_path.to_str().is_none() {
         return Err(invalid());
     }

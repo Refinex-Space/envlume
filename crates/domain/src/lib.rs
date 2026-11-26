@@ -40,7 +40,7 @@ pub struct WorkspaceBinding {
     pub state: BindingState,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolRule {
     pub tool: Alias,

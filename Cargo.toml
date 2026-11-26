@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/domain", "crates/workspace", "crates/application", "crates/storage", "crates/mcp", "crates/cli", "apps/desktop/src-tauri"]
+members = ["crates/domain", "crates/workspace", "crates/toolchain", "crates/application", "crates/storage", "crates/mcp", "crates/cli", "apps/desktop/src-tauri"]
 resolver = "3"
 
 [workspace.package]
@@ -13,3 +13,4 @@ envlume-domain = { path = "crates/domain" }
 envlume-application = { path = "crates/application" }
 envlume-storage = { path = "crates/storage" }
 envlume-workspace = { path = "crates/workspace" }
+envlume-toolchain = { path = "crates/toolchain" }

@@ -75,6 +75,36 @@ impl<R: Repository> Session<R> {
         })
     }
 
+    pub fn can_inspect_toolchain(&self) -> Result<bool, ErrorCode> {
+        let state = self.snapshot()?;
+        Ok(state.binding.profile_id.is_some()
+            && state.has_grant(Capability::ToolchainInspect, UtcDateTime::now()))
+    }
+
+    pub fn toolchain_doctor(
+        &self,
+        arguments: Value,
+        inspector: &impl ToolchainInspector,
+    ) -> Report {
+        self.dispatch("toolchain_doctor", arguments, |operation, request| {
+            let Resolved::Doctor(name) = operation else {
+                return Err(ErrorCode::InternalError.into());
+            };
+            let state = request.snapshot();
+            let profile = state
+                .profiles
+                .iter()
+                .find(|p| {
+                    Some(p.id) == state.binding.profile_id
+                        && p.project_id == state.project.id
+                        && p.name == *name
+                })
+                .ok_or(ErrorCode::ToolchainMissing)?;
+            let tools = inspector.diagnose(&state.binding.canonical_path, profile)?;
+            Ok((Payload::Doctor { tools }, None))
+        })
+    }
+
     fn dispatch(
         &self,
         name: &str,

@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+envlume-toolchain.workspace = true
 envlume-workspace.workspace = true
 envlume-application.workspace = true
 envlume-storage.workspace = true

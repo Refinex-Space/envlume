@@ -70,6 +70,8 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
     }
     let answer = if args.iter().any(|a| a == "delete") {
         "delete\r"
+    } else if args.iter().any(|a| a == "configure") {
+        "configure\r"
     } else {
         "trust\r"
     };
@@ -94,10 +96,32 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
 
 fn main() -> ExitCode {
     let args: Vec<_> = env::args_os().skip(1).collect();
+    // Native stand-ins live beside a fixture-version file in a synthetic JDK.
+    // The installed CLI has no fixture switch or test environment override.
+    let invoked = env::current_exe().unwrap();
+    if matches!(
+        invoked.file_stem().and_then(|n| n.to_str()),
+        Some("java" | "javac")
+    ) {
+        assert_eq!(args, ["-version"]);
+        assert!(env::var_os("T06_TEST_PASSWORD").is_none());
+        assert!(env::var_os("JAVA_TOOL_OPTIONS").is_none());
+        assert!(!Path::new("pom.xml").exists());
+        let v = std::fs::read_to_string(invoked.with_extension("fixture-version")).unwrap();
+        if invoked.file_stem().unwrap() == "java" {
+            eprintln!("openjdk version \"{v}\"");
+        } else {
+            println!("javac {v}");
+        }
+        return ExitCode::SUCCESS;
+    }
     if args.first().is_some_and(|s| s == "approve") {
         return approve(Path::new(&args[1]), &args[2..]);
     }
-    if args.first().is_some_and(|s| s == "project" || s == "mcp") {
+    if args
+        .first()
+        .is_some_and(|s| s == "project" || s == "mcp" || s == "doctor" || s == "toolchain")
+    {
         let scope = || {
             StorePaths::at(PathBuf::from(
                 env::var_os("T05_FIXTURE_STORE").expect("isolated test root"),
@@ -111,18 +135,22 @@ fn main() -> ExitCode {
         .map(PathBuf::from)
         .map(|p| p.canonicalize().unwrap())
         .unwrap_or_else(|| helper.clone());
-    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/workspace/trust.mjs");
-    let status = Command::new("node")
-        .arg(script)
-        .arg(exe)
-        .arg(helper)
-        .env("T05_FIXTURE_STORE", tmp.path().join("state"))
-        .current_dir(tmp.path())
-        .status()
-        .unwrap();
-    if status.success() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
+    for script in [
+        "../../tests/workspace/trust.mjs",
+        "../../tests/toolchain/doctor.mjs",
+    ] {
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join(script);
+        let status = Command::new("node")
+            .arg(script)
+            .arg(&exe)
+            .arg(&helper)
+            .env("T05_FIXTURE_STORE", tmp.path().join("state"))
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        if !status.success() {
+            return ExitCode::FAILURE;
+        }
     }
+    ExitCode::SUCCESS
 }

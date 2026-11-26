@@ -787,6 +787,7 @@ dependencies = [
  "envlume-domain",
  "envlume-mcp",
  "envlume-storage",
+ "envlume-toolchain",
  "envlume-workspace",
  "portable-pty",
  "rusqlite",
@@ -849,6 +850,23 @@ dependencies = [
  "rusqlite",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "envlume-toolchain"
+version = "0.1.0-dev.1"
+dependencies = [
+ "dirs",
+ "envlume-application",
+ "envlume-domain",
+ "envlume-workspace",
+ "libc",
+ "quick-xml",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 1.2.2+spec-1.1.0",
 ]
 
 [[package]]

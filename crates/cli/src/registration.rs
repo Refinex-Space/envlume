@@ -14,7 +14,10 @@ use std::{
     process::ExitCode,
 };
 
-pub fn resolve(paths: Result<StorePaths, StorageError>, id: BindingId) -> Resolution {
+pub(super) fn session(
+    paths: Result<StorePaths, StorageError>,
+    id: BindingId,
+) -> Result<Session<LocalRegistration>, ErrorCode> {
     let paths = paths.map_err(|_| ErrorCode::InternalError)?;
     if !paths
         .database()
@@ -31,14 +34,16 @@ pub fn resolve(paths: Result<StorePaths, StorageError>, id: BindingId) -> Resolu
         }
     })?;
     let origin = std::env::current_dir().map_err(|_| ErrorCode::ProjectNotTrusted)?;
-    Ok(Box::new(Session::from_registration(
-        LocalRegistration { store, origin },
-        id,
-        Actor::LocalStdio,
-    )?))
+    Session::from_registration(LocalRegistration { store, origin }, id, Actor::LocalStdio)
+}
+pub fn resolve(paths: Result<StorePaths, StorageError>, id: BindingId) -> Resolution {
+    Ok(Box::new(envlume_mcp::DiagnosticProject {
+        session: session(paths, id)?,
+        inspector: envlume_toolchain::LocalToolchain,
+    }))
 }
 
-fn confirm(prompt: &str, word: &str) -> bool {
+pub(super) fn confirm(prompt: &str, word: &str) -> bool {
     if !(io::stdin().is_terminal() && io::stderr().is_terminal()) {
         return false;
     }

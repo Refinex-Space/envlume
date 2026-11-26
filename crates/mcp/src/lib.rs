@@ -2,7 +2,7 @@
 //! the local entry point; tool arguments and client metadata cannot replace it.
 use envlume_application::{
     ErrorCode, Session,
-    ports::{Repository, UseCases},
+    ports::{Repository, ToolchainInspector, UseCases},
     result::Report,
 };
 use rmcp::{
@@ -21,6 +21,12 @@ const NAME: &str = "project_context";
 pub trait BoundProject: Send + Sync {
     fn visible(&self) -> Result<bool, ErrorCode>;
     fn call(&self, arguments: Value) -> Report;
+    fn doctor_visible(&self) -> Result<bool, ErrorCode> {
+        Ok(false)
+    }
+    fn doctor(&self, _: Value) -> Option<Report> {
+        None
+    }
 }
 
 /// A fresh use-case instance may be supplied for each request. The session keeps
@@ -52,9 +58,30 @@ impl<R: Repository + Send + Sync> BoundProject for Session<R> {
     }
 }
 
+pub struct DiagnosticProject<R, I> {
+    pub session: Session<R>,
+    pub inspector: I,
+}
+impl<R: Repository + Send + Sync, I: ToolchainInspector + Send + Sync> BoundProject
+    for DiagnosticProject<R, I>
+{
+    fn visible(&self) -> Result<bool, ErrorCode> {
+        self.session.can_inspect_project()
+    }
+    fn call(&self, arguments: Value) -> Report {
+        self.session.project_context(arguments)
+    }
+    fn doctor_visible(&self) -> Result<bool, ErrorCode> {
+        self.session.can_inspect_toolchain()
+    }
+    fn doctor(&self, arguments: Value) -> Option<Report> {
+        Some(self.session.toolchain_doctor(arguments, &self.inspector))
+    }
+}
+
 pub type Resolution = Result<Box<dyn BoundProject>, ErrorCode>;
 struct Server {
-    project: Resolution,
+    project: Result<std::sync::Arc<dyn BoundProject>, ErrorCode>,
 }
 
 fn rejection(code: ErrorCode) -> ErrorData {
@@ -97,7 +124,7 @@ impl ServerHandler for Server {
         _: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let visible = self.project()?.visible().map_err(rejection)?;
-        let tools = if visible {
+        let mut tools = if visible {
             let schema = serde_json::Map::from_iter([
                 ("type".into(), json!("object")),
                 ("properties".into(), json!({})),
@@ -112,6 +139,22 @@ impl ServerHandler for Server {
         } else {
             vec![]
         };
+        if self.project()?.doctor_visible().map_err(rejection)? {
+            let schema = serde_json::Map::from_iter([
+                ("type".into(), json!("object")),
+                (
+                    "properties".into(),
+                    json!({"profile":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[a-z][a-z0-9_-]*$"}}),
+                ),
+                ("required".into(), json!(["profile"])),
+                ("additionalProperties".into(), json!(false)),
+            ]);
+            tools.push(Tool::new(
+                "toolchain_doctor",
+                "Diagnose the selected local toolchain.",
+                schema,
+            ));
+        }
         Ok(ListToolsResult::with_all_items(tools))
     }
     async fn call_tool(
@@ -119,11 +162,19 @@ impl ServerHandler for Server {
         params: CallToolRequestParams,
         _: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let project = self.project()?;
-        if params.name != NAME {
-            return Err(ErrorData::invalid_params("Unknown tool", None));
-        }
-        let report = project.call(Value::Object(params.arguments.unwrap_or_default()));
+        let project = self.project.as_ref().map_err(|e| rejection(*e))?;
+        let arguments = Value::Object(params.arguments.unwrap_or_default());
+        let report = match params.name.as_ref() {
+            NAME => project.call(arguments),
+            "toolchain_doctor" => {
+                let project = project.clone();
+                tokio::task::spawn_blocking(move || project.doctor(arguments))
+                    .await
+                    .map_err(|_| rejection(ErrorCode::InternalError))?
+                    .ok_or_else(|| ErrorData::invalid_params("Unknown tool", None))?
+            }
+            _ => return Err(ErrorData::invalid_params("Unknown tool", None)),
+        };
         let ok = report.ok;
         let value =
             serde_json::to_value(report).map_err(|_| rejection(ErrorCode::InternalError))?;
@@ -144,13 +195,15 @@ pub fn run_stdio(project: Resolution) -> Result<(), ErrorCode> {
         .map_err(|_| ErrorCode::InternalError)?;
     eprintln!("Envlume MCP: starting STDIO");
     let result = runtime.block_on(async {
-        let service = Server { project }
-            .serve((tokio::io::stdin(), tokio::io::stdout()))
-            .await
-            .map_err(|_| {
-                eprintln!("Envlume MCP: handshake failed");
-                startup_error.unwrap_or(ErrorCode::InvalidInput)
-            })?;
+        let service = Server {
+            project: project.map(std::sync::Arc::from),
+        }
+        .serve((tokio::io::stdin(), tokio::io::stdout()))
+        .await
+        .map_err(|_| {
+            eprintln!("Envlume MCP: handshake failed");
+            startup_error.unwrap_or(ErrorCode::InvalidInput)
+        })?;
         match service.waiting().await {
             Ok(QuitReason::Closed | QuitReason::Cancelled) => startup_error.map_or(Ok(()), Err),
             _ => Err(ErrorCode::InternalError),
