@@ -432,3 +432,78 @@ pub fn prepare(
         versions,
     })
 }
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use envlume_domain::{Alias, ProfileId, ProjectId, ToolchainProfile};
+    use std::{
+        io::Read,
+        process::{Command, Stdio},
+    };
+
+    #[test]
+    fn npm_runs_a_lifecycle_in_a_windows_job() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("T07 空格 build");
+        let home = base.path().join("home");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(&home).unwrap();
+        fs::write(
+            root.join("package.json"),
+            r#"{"name":"fixture","scripts":{"build":"node build.cjs"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("build.cjs"),
+            "process.stdout.write('fixture-built')",
+        )
+        .unwrap();
+        let root = root.canonicalize().unwrap();
+        let inventory = LocalToolchain
+            .resolve(
+                &root,
+                &ToolchainProfile {
+                    id: ProfileId::generate(),
+                    project_id: ProjectId::generate(),
+                    name: Alias::try_from("default".to_owned()).unwrap(),
+                    rules: Vec::new(),
+                },
+            )
+            .unwrap();
+        let node = exe(selected(&inventory, "node").unwrap()).unwrap();
+        let npm = selected(&inventory, "npm")
+            .unwrap()
+            .package_entry
+            .as_ref()
+            .unwrap();
+        let mut cmd = Command::new(dunce::simplified(node));
+        let env = child_environment(&home, base.path(), &[node.parent().unwrap().into()]).unwrap();
+        cmd.args([
+            dunce::simplified(npm).as_os_str(),
+            OsStr::new("run"),
+            OsStr::new("build"),
+        ])
+        .current_dir(dunce::simplified(&root))
+        .env_clear()
+        .envs(env)
+        .env("NODE", dunce::simplified(node))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+        let mut child = crate::tree::Tree::spawn(cmd).unwrap();
+        let (mut out, mut err) = child.output();
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        out.read_to_string(&mut stdout).unwrap();
+        err.read_to_string(&mut stderr).unwrap();
+        let status = loop {
+            if let Some(s) = child.finished().unwrap() {
+                break s;
+            }
+            std::thread::yield_now();
+        };
+        assert!(status.success(), "Synthetic installed npm failed: {stderr}");
+        assert!(stdout.contains("fixture-built"));
+    }
+}

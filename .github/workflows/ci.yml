@@ -43,7 +43,7 @@ jobs:
           pnpm --version
       - name: Check Windows package manager with an isolated child environment
         if: runner.os == 'Windows'
-        run: node tests/execution/windows-environment.mjs
+        run: cargo test --locked -p envlume-execution
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
