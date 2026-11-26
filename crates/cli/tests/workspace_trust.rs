@@ -144,7 +144,12 @@ fn main() -> ExitCode {
         return approve(Path::new(&args[1]), &args[2..]);
     }
     if args.first().is_some_and(|s| {
-        s == "project" || s == "mcp" || s == "doctor" || s == "toolchain" || s == "task"
+        s == "report"
+            || s == "project"
+            || s == "mcp"
+            || s == "doctor"
+            || s == "toolchain"
+            || s == "task"
     }) {
         let scope = || {
             StorePaths::at(PathBuf::from(
@@ -163,6 +168,7 @@ fn main() -> ExitCode {
         "../../tests/workspace/trust.mjs",
         "../../tests/toolchain/doctor.mjs",
         "../../tests/execution/tasks.mjs",
+        "../../tests/execution/evidence.mjs",
     ] {
         let script = Path::new(env!("CARGO_MANIFEST_DIR")).join(script);
         let status = Command::new("node")

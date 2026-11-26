@@ -790,6 +790,7 @@ name = "envlume"
 version = "0.1.0-dev.1"
 dependencies = [
  "envlume-application",
+ "envlume-audit",
  "envlume-domain",
  "envlume-execution",
  "envlume-mcp",
@@ -811,6 +812,16 @@ dependencies = [
  "serde",
  "serde_json",
  "time",
+]
+
+[[package]]
+name = "envlume-audit"
+version = "0.1.0-dev.1"
+dependencies = [
+ "envlume-application",
+ "envlume-domain",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -841,12 +852,12 @@ version = "0.1.0-dev.1"
 dependencies = [
  "dunce",
  "envlume-application",
+ "envlume-audit",
  "envlume-domain",
  "envlume-toolchain",
  "envlume-workspace",
  "libc",
  "process-wrap",
- "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
@@ -871,6 +882,7 @@ version = "0.1.0-dev.1"
 dependencies = [
  "dirs",
  "envlume-application",
+ "envlume-audit",
  "envlume-domain",
  "envlume-workspace",
  "libc",

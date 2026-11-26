@@ -6,9 +6,11 @@ use envlume_application::{
     tasks::{AuthorizedTask, Template},
     workspaces::ManagementError,
 };
+use envlume_audit::Entry;
 use envlume_domain::{Actor, BindingId, Capability};
 use envlume_execution::{Caller, Review, Slot};
-use envlume_storage::{LocalRegistration, Store, StorePaths};
+use envlume_storage::{EvidenceScope, LocalRegistration, Store, StorePaths};
+use serde_json::Value;
 use serde_json::json;
 use std::{
     env,
@@ -128,25 +130,31 @@ fn first_use(
         review.distribution_digest.as_deref(),
     )?)
 }
-fn supervise(template: Template, id: BindingId, machine: bool) -> Result<u8> {
-    let caller = Caller::capture()?;
-    if caller.disconnected() {
+fn supervise(
+    template: Template,
+    id: BindingId,
+    actor: Actor,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<(u8, Value)> {
+    if cancelled() {
         return Err(io::Error::from(io::ErrorKind::Interrupted).into());
     }
     let mut cmd = Command::new(env::current_exe()?);
     cmd.args([
         "task",
-        "__worker",
+        if actor == Actor::LocalStdio {
+            "__stdio_worker"
+        } else {
+            "__worker"
+        },
         template.key(),
         "--binding",
         &id.0.to_string(),
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
-    if machine {
-        cmd.arg("--json");
-    }
+    .stderr(Stdio::inherit())
+    .arg("--json");
     // The worker owns the tree and slot. Losing the CLI (including SIGKILL)
     // closes its private pipe. It must not receive the foreground terminal signal.
     #[cfg(unix)]
@@ -169,22 +177,27 @@ fn supervise(template: Template, id: BindingId, machine: bool) -> Result<u8> {
     // Detached workers cannot write to a Windows caller's console handles.
     // Relay only the worker's report and diagnostics through dedicated pipes.
     let mut stdout = worker.stdout.take().expect("worker stdout");
-    let mut stderr = worker.stderr.take().expect("worker stderr");
-    let out = thread::spawn(move || io::copy(&mut stdout, &mut io::stdout().lock()));
-    let err = thread::spawn(move || io::copy(&mut stderr, &mut io::stderr().lock()));
+    let out = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.by_ref().take(65536).read_to_end(&mut bytes)?;
+        Ok::<_, io::Error>(bytes)
+    });
     let status = loop {
         if let Some(status) = worker.try_wait()? {
             break status;
         }
-        if caller.disconnected() {
+        if cancelled() {
             drop(lifetime);
             break worker.wait()?;
         }
         thread::sleep(Duration::from_millis(20));
     };
-    out.join().map_err(|_| ErrorCode::InternalError)??;
-    err.join().map_err(|_| ErrorCode::InternalError)??;
-    Ok(status.code().and_then(|v| v.try_into().ok()).unwrap_or(7))
+    let bytes = out.join().map_err(|_| ErrorCode::InternalError)??;
+    let value = serde_json::from_slice(&bytes).map_err(|_| ErrorCode::InternalError)?;
+    Ok((
+        status.code().and_then(|v| v.try_into().ok()).unwrap_or(7),
+        value,
+    ))
 }
 fn worker(
     paths: &StorePaths,
@@ -192,8 +205,9 @@ fn worker(
     s: &Session<LocalRegistration>,
     task: AuthorizedTask,
     review: Review,
-    machine: bool,
-) -> Result<u8> {
+    actor: Actor,
+    scope: &EvidenceScope,
+) -> Result<(u8, Value)> {
     if !approved(store, &task, &review)? || io::stdin().is_terminal() {
         return Err(ErrorCode::PolicyDenied.into());
     }
@@ -227,13 +241,24 @@ fn worker(
     {
         return Err(ErrorCode::PolicyDenied.into());
     }
-    let mut last = Instant::now();
+    report.binding_alias = Some(task.binding_alias.clone());
+    report.capability = Some(Capability::TaskRun(task.task).wire_name());
+    let record_id = store.begin_execution(
+        scope,
+        actor,
+        Entry {
+            report: &report,
+            template: Some(task.template),
+            outcome: None,
+        },
+    )?;
+    let mut last = None;
     let outcome = envlume_execution::execute(launch, task.template, request, task.timeout, || {
         if stopped()? {
             return Ok(true);
         }
-        if last.elapsed() >= Duration::from_millis(250) {
-            last = Instant::now();
+        if last.is_none_or(|check: Instant| check.elapsed() >= Duration::from_millis(250)) {
+            last = Some(Instant::now());
             return Ok(!s.authorize_task(task.template).is_ok_and(|t| {
                 t.grant == task.grant
                     && t.profile == task.profile
@@ -241,10 +266,26 @@ fn worker(
             }));
         }
         Ok(false)
-    })?;
+    });
+    let outcome = match outcome {
+        Ok(r) => r,
+        Err(e) => {
+            let failure = Failure::from(e);
+            report.fail(failure.0, failure.1);
+            store.finish_execution(
+                scope,
+                actor,
+                record_id,
+                Entry {
+                    report: &report,
+                    template: Some(task.template),
+                    outcome: None,
+                },
+            )?;
+            return Ok((report.exit_code(), json!(report)));
+        }
+    };
     report.duration_ms = outcome.duration_ms;
-    report.binding_alias = Some(task.binding_alias);
-    report.capability = Some(Capability::TaskRun(task.task).wire_name());
     report.evidence_id = Some(outcome.evidence_id);
     match (outcome.status.as_str(), outcome.exit_code) {
         ("timeout", _) => report.fail(ErrorCode::Timeout, "Task exceeded its time limit."),
@@ -255,7 +296,9 @@ fn worker(
                 stdout_summary: outcome.stdout_summary.to_string(),
                 stderr_summary: outcome.stderr_summary.to_string(),
             }));
-            let verdict = if code == 0 {
+            let verdict = if code == 0 && outcome.tests_skipped() {
+                "Build completed with reported tests skipped"
+            } else if code == 0 {
                 "Build passed"
             } else {
                 "Build failed"
@@ -273,7 +316,17 @@ fn worker(
             "Task terminated without an exit code.",
         ),
     }
-    print_report(&report, machine)
+    store.finish_execution(
+        scope,
+        actor,
+        record_id,
+        Entry {
+            report: &report,
+            template: Some(task.template),
+            outcome: Some(&outcome),
+        },
+    )?;
+    Ok((report.exit_code(), json!(report)))
 }
 
 fn print_report(report: &Report, machine: bool) -> Result<u8> {
@@ -291,6 +344,134 @@ fn print_report(report: &Report, machine: bool) -> Result<u8> {
         }
     }
     Ok(report.exit_code())
+}
+
+fn archived_error(
+    store: &Store,
+    scope: &EvidenceScope,
+    actor: Actor,
+    template: Option<Template>,
+    failure: Failure,
+) -> Result<(u8, Value)> {
+    let mut report = Report::new("task_run");
+    report.fail(failure.0, failure.1);
+    store.record(
+        scope,
+        actor,
+        Entry {
+            report: &report,
+            template,
+            outcome: None,
+        },
+    )?;
+    Ok((report.exit_code(), json!(report)))
+}
+
+/// Use the same approval, worker and audit path for the CLI and the binding-scoped MCP adapter.
+pub(super) struct Tasks {
+    pub session: Session<LocalRegistration>,
+    store: Store,
+    scope: EvidenceScope,
+    binding: BindingId,
+    actor: Actor,
+}
+impl Tasks {
+    pub fn open(
+        store: Store,
+        binding: BindingId,
+        actor: Actor,
+    ) -> std::result::Result<Self, ErrorCode> {
+        let origin = env::current_dir().map_err(|_| ErrorCode::ProjectNotTrusted)?;
+        let session = Session::from_registration(
+            LocalRegistration {
+                store: store.clone(),
+                origin: origin.clone(),
+            },
+            binding,
+            actor,
+        )?;
+        let scope = store
+            .evidence_scope(binding, &origin)
+            .map_err(|e| Failure::from(e).0)?;
+        Ok(Self {
+            session,
+            store,
+            scope,
+            binding,
+            actor,
+        })
+    }
+    pub fn inspect(&self, mut report: Report) -> Report {
+        if let Err(error) = self.store.record(
+            &self.scope,
+            self.actor,
+            Entry {
+                report: &report,
+                template: None,
+                outcome: None,
+            },
+        ) {
+            let failure = Failure::from(error);
+            report.fail(failure.0, failure.1);
+        }
+        report
+    }
+    fn run(
+        &self,
+        template: std::result::Result<Template, ErrorCode>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(u8, Value)> {
+        let result = (|| {
+            let template = template?;
+            let task = self.session.authorize_task(template)?;
+            let review = envlume_execution::review(&task)?;
+            if self.actor == Actor::Cli {
+                first_use(&self.store, &self.session, &task, &review)?;
+            } else if !approved(&self.store, &task, &review)? {
+                return Err(ErrorCode::PolicyDenied.into());
+            }
+            supervise(template, self.binding, self.actor, cancelled)
+        })();
+        match result {
+            Ok(output) => Ok(output),
+            Err(failure) => {
+                archived_error(&self.store, &self.scope, self.actor, template.ok(), failure)
+            }
+        }
+    }
+    pub fn mcp_run(&self, args: Value, cancelled: &dyn Fn() -> bool) -> Value {
+        use envlume_application::input::ToolCall;
+        let template = ToolCall::parse("task_run", args).and_then(|call| match call {
+            ToolCall::TaskRun(input) => Template::parse(input.task_id.as_str()),
+            _ => Err(ErrorCode::InvalidInput),
+        });
+        match self.run(template, cancelled) {
+            Ok((_, report)) => report,
+            Err(Failure(code, msg)) => {
+                let mut report = Report::new("task_run");
+                report.fail(code, msg);
+                json!(report)
+            }
+        }
+    }
+}
+
+fn show_run(value: &Value, machine: bool) {
+    if machine {
+        println!("{value}");
+    } else {
+        println!(
+            "task_run: {}\nrequestId: {}",
+            value["summary"].as_str().unwrap_or(""),
+            value["requestId"].as_str().unwrap_or("")
+        );
+        if let Some(code) = value["result"]["exitCode"].as_i64() {
+            println!("exitCode: {code}");
+        }
+        if let Some(id) = value["evidenceId"].as_str() {
+            println!("evidenceId: {id}");
+        }
+    }
 }
 
 fn private_home(path: &Path) -> io::Result<()> {
@@ -332,7 +513,56 @@ fn dispatch(
         [op, flag, id] if op == "list" && flag == "--binding" => {
             let id = binding(id)?;
             let (_, db) = open()?;
-            return print_report(&session(&db, id)?.task_list(), machine);
+            let tasks = Tasks::open(db, id, Actor::Cli)?;
+            return print_report(&tasks.inspect(tasks.session.task_list()), machine);
+        }
+        [op, name, flag, raw, rest @ ..]
+            if flag == "--binding"
+                && (op == "run" || op == "__worker" || op == "__stdio_worker") =>
+        {
+            let id = binding(raw)?;
+            let actor = if op == "__stdio_worker" {
+                Actor::LocalStdio
+            } else {
+                Actor::Cli
+            };
+            let (paths, db) = open()?;
+            let endpoint = Tasks::open(db, id, actor)?;
+            let template = if rest.is_empty() {
+                Template::parse(name.to_str().unwrap_or(""))
+            } else {
+                Err(ErrorCode::InvalidInput)
+            };
+            let (code, report) = if op == "run" {
+                let caller = Caller::capture()?;
+                endpoint.run(template, &|| caller.disconnected())?
+            } else {
+                let result = (|| {
+                    let task = endpoint.session.authorize_task(template?)?;
+                    let review = envlume_execution::review(&task)?;
+                    worker(
+                        &paths,
+                        &endpoint.store,
+                        &endpoint.session,
+                        task,
+                        review,
+                        actor,
+                        &endpoint.scope,
+                    )
+                })();
+                match result {
+                    Ok(ok) => ok,
+                    Err(failure) => archived_error(
+                        &endpoint.store,
+                        &endpoint.scope,
+                        actor,
+                        template.ok(),
+                        failure,
+                    )?,
+                }
+            };
+            show_run(&report, machine);
+            return Ok(code);
         }
         [op, name, flag, id, rest @ ..] if flag == "--binding" => {
             let template = key(name)?;
@@ -367,7 +597,7 @@ fn dispatch(
                     return Err(ErrorCode::InvalidInput.into());
                 }
                 let (paths, db) = open()?;
-                let s = session(&db, id)?;
+                session(&db, id)?;
                 match op.to_str() {
                     Some("disable") => db.disable_task(id, &env::current_dir()?, template)?,
                     Some("cancel") => {
@@ -375,15 +605,6 @@ fn dispatch(
                         if n == 0 {
                             return Err(ErrorCode::InvalidInput.into());
                         }
-                    }
-                    Some("run" | "__worker") => {
-                        let task = s.authorize_task(template)?;
-                        let review = envlume_execution::review(&task)?;
-                        if op == "__worker" {
-                            return worker(&paths, &db, &s, task, review, machine);
-                        }
-                        first_use(&db, &s, &task, &review)?;
-                        return supervise(template, id, machine);
                     }
                     _ => return Err(ErrorCode::InvalidInput.into()),
                 }
@@ -414,7 +635,7 @@ pub fn run(
         Err(Failure(code, msg)) => {
             if json {
                 let operation = match args.first().and_then(|op| op.to_str()) {
-                    Some("run" | "__worker") => "task_run",
+                    Some("run" | "__worker" | "__stdio_worker") => "task_run",
                     Some("list") => "task_list",
                     _ => "unknown",
                 };

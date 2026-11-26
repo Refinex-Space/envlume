@@ -1,11 +1,13 @@
+use super::tasks::Tasks;
+use envlume_application::result::Report;
 use envlume_application::{
-    ErrorCode, Session,
+    ErrorCode,
     projects::StorageError,
     workspaces::{ManagementError, WorkspaceRepository, add_project, inspect_project},
 };
 use envlume_domain::{Actor, BindingId, ProjectId};
-use envlume_mcp::Resolution;
-use envlume_storage::{LocalRegistration, Store, StorePaths};
+use envlume_mcp::{BoundProject, Resolution};
+use envlume_storage::{Store, StorePaths};
 use serde_json::{Value, json};
 use std::{
     ffi::OsString,
@@ -14,10 +16,11 @@ use std::{
     process::ExitCode,
 };
 
-pub(super) fn session(
+pub(super) fn endpoint(
     paths: Result<StorePaths, StorageError>,
     id: BindingId,
-) -> Result<Session<LocalRegistration>, ErrorCode> {
+    actor: Actor,
+) -> Result<Tasks, ErrorCode> {
     let paths = paths.map_err(|_| ErrorCode::InternalError)?;
     if !paths
         .database()
@@ -33,14 +36,39 @@ pub(super) fn session(
             ErrorCode::InternalError
         }
     })?;
-    let origin = std::env::current_dir().map_err(|_| ErrorCode::ProjectNotTrusted)?;
-    Session::from_registration(LocalRegistration { store, origin }, id, Actor::LocalStdio)
+    Tasks::open(store, id, actor)
+}
+impl BoundProject for Tasks {
+    fn visible(&self) -> Result<bool, ErrorCode> {
+        self.session.can_inspect_project()
+    }
+    fn call(&self, arguments: Value) -> Report {
+        self.session.project_context(arguments)
+    }
+    fn doctor_visible(&self) -> Result<bool, ErrorCode> {
+        self.session.can_inspect_toolchain()
+    }
+    fn doctor(&self, args: Value) -> Option<Report> {
+        Some(
+            self.inspect(
+                self.session
+                    .toolchain_doctor(args, &envlume_toolchain::LocalToolchain),
+            ),
+        )
+    }
+    fn task_visibility(&self) -> Result<(bool, bool), ErrorCode> {
+        self.session.task_visibility()
+    }
+    fn tasks(&self, name: &str, args: Value, cancelled: &dyn Fn() -> bool) -> Option<Value> {
+        match name {
+            "task_list" => Some(json!(self.inspect(self.session.task_list_with(args)))),
+            "task_run" => Some(self.mcp_run(args, cancelled)),
+            _ => None,
+        }
+    }
 }
 pub fn resolve(paths: Result<StorePaths, StorageError>, id: BindingId) -> Resolution {
-    Ok(Box::new(envlume_mcp::DiagnosticProject {
-        session: session(paths, id)?,
-        inspector: envlume_toolchain::LocalToolchain,
-    }))
+    Ok(Box::new(endpoint(paths, id, Actor::LocalStdio)?))
 }
 
 pub(super) fn confirm(prompt: &str, word: &str) -> bool {

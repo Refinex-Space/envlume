@@ -420,3 +420,29 @@ fn missing_database_with_orphan_journal_refuses_initialization() {
     assert_eq!(fs::read(wal).unwrap(), b"orphan");
     assert!(!paths.database().exists());
 }
+
+#[test]
+fn migration_preserves_existing_evidence_and_its_binding() {
+    let (_dir, paths) = isolated();
+    let db = previous(&paths);
+    let binding = BindingId(BINDING.parse().unwrap());
+    let request = envlume_domain::RequestId::generate();
+    let evidence = envlume_domain::EvidenceId::generate();
+    db.execute(
+        "INSERT INTO workspace_bindings(id,project_id,alias,canonical_path,trust_state,created_at)
+         SELECT ?1,id,'old-binding','fixture','TRUSTED',1700000000000 FROM projects",
+        [binding.0],
+    )
+    .unwrap();
+    db.execute("INSERT INTO execution_records(id,request_id,evidence_id,project_id,binding_id,capability,
+        actor,decision,sanitized_summary,exit_code,duration_ms,created_at)
+        SELECT randomblob(16),?1,?2,project_id,id,'task.run','CLI','FAILED','Build failed',1,18,1700000000000
+        FROM workspace_bindings WHERE id=?3", rusqlite::params![request.0,evidence.0,binding.0]).unwrap();
+    drop(db);
+    Store::open(paths.clone()).unwrap();
+    let db = connect(&paths.database(), false).unwrap();
+    let preserved:bool = db.query_row("SELECT EXISTS(SELECT 1 FROM execution_records WHERE binding_id=?1
+        AND request_id=?2 AND evidence_id=?3 AND exit_code=1 AND decision='FAILED' AND actor='CLI' AND details_json IS NULL)",
+        rusqlite::params![binding.0,request.0,evidence.0],|r|r.get(0)).unwrap();
+    assert!(preserved);
+}

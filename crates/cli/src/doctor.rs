@@ -77,8 +77,13 @@ fn execute(
                 _ => return Err(INPUT),
             };
             let session =
-                registration::session(locate(), id(binding)?).map_err(Failure::Application)?;
-            let report = session.toolchain_doctor(json!({"profile":profile}), &LocalToolchain);
+                registration::endpoint(locate(), id(binding)?, envlume_domain::Actor::Cli)
+                    .map_err(Failure::Application)?;
+            let report = session.inspect(
+                session
+                    .session
+                    .toolchain_doctor(json!({"profile":profile}), &LocalToolchain),
+            );
             if json_mode {
                 println!(
                     "{}",

@@ -82,6 +82,13 @@ pub(crate) fn visible_tasks(state: &BindingSnapshot) -> Vec<NamedTask> {
         .collect()
 }
 impl<R: Repository> Session<R> {
+    pub fn task_visibility(&self) -> Result<(bool, bool), ErrorCode> {
+        let state = self.snapshot()?;
+        Ok((
+            state.has_grant(Capability::TaskInspect, UtcDateTime::now()),
+            !visible_tasks(&state).is_empty(),
+        ))
+    }
     pub fn authorize_task(&self, template: Template) -> Result<AuthorizedTask, ErrorCode> {
         let state = self.snapshot()?;
         let task = state

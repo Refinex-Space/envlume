@@ -1,4 +1,6 @@
 //! SQLite metadata shared by the local entry points. Connections stay in Rust.
+mod evidence;
+pub use evidence::{EvidenceScope, RecordKey};
 mod paths;
 mod repository;
 mod schema;

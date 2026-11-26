@@ -106,7 +106,19 @@ envlume task disable node-build --binding <binding-id>
 
 `maven-test` 执行 Maven 的 `-B -ntp test`，`node-build` 使用项目选定的本机包管理器执行 `run build`。子进程使用绑定的工具、独立构建主目录和按次创建的临时目录。同一用户最多同时运行两项任务，默认超时 600 秒，启用时可指定 1–3600 秒。`cancel` 停止该绑定下指定名称的所有运行实例，`disable` 同时撤销后续运行授权。
 
-JSON 中的 `result.exitCode` 是构建进程的退出码。超时返回 CLI 退出码 6，取消或缺少授权返回 3。每条输出流仅从前 32 KiB 提取允许的构建事件，摘要返回字节数，并在超限时标明 `truncated`。T07 提供请求和执行编号，T08 接入证据持久化、查询及 MCP 任务入口。[T07 任务与验证](docs/plan/tasks/T07-named-task-runner.md)
+JSON 中的 `result.exitCode` 是构建进程的退出码。超时返回 CLI 退出码 6，取消或缺少授权返回 3。每条输出流仅从前 32 KiB 提取允许的构建事件，摘要返回字节数，并在超限时标明 `truncated`。已授权绑定可通过 MCP 的 `task_list`、`task_run` 使用同一执行器。首次构建确认在本地终端完成。[T07 任务与验证](docs/plan/tasks/T07-named-task-runner.md)
+
+### 核对任务证据
+
+在登记的工作区根目录，用任务返回的 `evidenceId` 查看已执行的构建；执行前的拒绝用 `requestId` 查询。命令会重新核验本地目录和绑定身份。
+
+```sh
+envlume report show --evidence <evidence-id> --binding <binding-id> --json
+envlume report show --request <request-id> --binding <binding-id> --json
+envlume report clear --binding <binding-id> --json
+```
+
+报告包含调用主体、工具版本、固定命令摘要、时间、耗时、退出码和诊断建议。Maven 输出中可识别的 Surefire 汇总会留下测试计数，可和项目的 `target/surefire-reports` 对照。构建返回非零时，CLI 调用可正常完成，报告的 `decision` 为 `FAILED`。取消和缺少工具记为 `SKIPPED`，授权拒绝记为 `DENIED`。记录在活动 SQLite 目录中保留 30 天，读写记录时清理过期项；`report clear` 删除当前绑定的记录。历史查询仅通过本地 CLI 提供。[T08 验收记录](docs/plan/tasks/T08-execution-evidence.md)
 
 ### 构建与验证
 

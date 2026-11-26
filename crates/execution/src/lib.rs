@@ -5,7 +5,6 @@ mod tree;
 pub use caller::Caller;
 use envlume_domain::{EvidenceId, RequestId, UtcDateTime};
 pub use limit::{Slot, cancel};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -26,26 +25,11 @@ pub struct Launch {
     pub(crate) versions: BTreeMap<String, String>,
 }
 const STREAM_LIMIT: u64 = 32 * 1024;
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OutputSummary {
-    pub bytes: u64,
-    pub truncated: bool,
-    pub events: Vec<String>,
-}
-impl std::fmt::Display for OutputSummary {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} bytes", self.bytes)?;
-        if self.truncated {
-            write!(f, " (truncated)")?;
-        }
-        for event in &self.events {
-            write!(f, ", {event}")?;
-        }
-        Ok(())
-    }
-}
-fn drain(mut pipe: impl Read + Send + 'static) -> mpsc::Receiver<io::Result<OutputSummary>> {
+pub use envlume_audit::{OutputSummary, RunResult};
+fn drain(
+    mut pipe: impl Read + Send + 'static,
+    maven: bool,
+) -> mpsc::Receiver<io::Result<OutputSummary>> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let result = (|| {
@@ -67,7 +51,15 @@ fn drain(mut pipe: impl Read + Send + 'static) -> mpsc::Receiver<io::Result<Outp
             // Forward only fixed vocabulary. Repository text and arbitrary
             // key/value data never leave this bounded, in-memory prefix.
             let mut events = Vec::new();
-            for line in prefix.split(|b| *b == b'\n') {
+            let mut assertions = None;
+            // Ignore a partial final line if the prefix ends in the middle of output.
+            if bytes > STREAM_LIMIT {
+                prefix.truncate(prefix.iter().rposition(|b| *b == b'\n').unwrap_or(0));
+            }
+            for line in prefix.split(|b| *b == b'\n').filter(|_| maven) {
+                if let Some(counts) = envlume_audit::Assertions::from_summary(line.trim_ascii()) {
+                    assertions = Some(counts);
+                }
                 let event = match line.trim_ascii() {
                     b"[INFO] BUILD SUCCESS" => "BUILD SUCCESS",
                     b"[INFO] BUILD FAILURE" => "BUILD FAILURE",
@@ -81,26 +73,12 @@ fn drain(mut pipe: impl Read + Send + 'static) -> mpsc::Receiver<io::Result<Outp
                 bytes,
                 truncated: bytes > STREAM_LIMIT,
                 events,
+                assertions,
             })
         })();
         let _ = tx.send(result);
     });
     rx
-}
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunResult {
-    pub schema_version: u8,
-    pub request_id: RequestId,
-    pub evidence_id: EvidenceId,
-    pub task_id: String,
-    pub timestamp_utc: String,
-    pub duration_ms: u64,
-    pub status: String,
-    pub exit_code: Option<i32>,
-    pub versions: BTreeMap<String, String>,
-    pub stdout_summary: OutputSummary,
-    pub stderr_summary: OutputSummary,
 }
 pub fn execute(
     launch: Launch,
@@ -129,8 +107,9 @@ pub fn execute(
     #[cfg(windows)]
     let mut child = Tree::spawn(cmd)?;
     let (out, err) = child.output();
-    let stdout = drain(out);
-    let stderr = drain(err);
+    let maven = task == envlume_application::tasks::Template::MavenTest;
+    let stdout = drain(out, maven);
+    let stderr = drain(err, maven);
     let (status, exit_code) = loop {
         if cancelled()? {
             child.stop()?;

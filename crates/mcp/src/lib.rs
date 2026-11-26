@@ -21,6 +21,17 @@ const NAME: &str = "project_context";
 pub trait BoundProject: Send + Sync {
     fn visible(&self) -> Result<bool, ErrorCode>;
     fn call(&self, arguments: Value) -> Report;
+    fn task_visibility(&self) -> Result<(bool, bool), ErrorCode> {
+        Ok((false, false))
+    }
+    fn tasks(
+        &self,
+        _name: &str,
+        _arguments: Value,
+        _cancelled: &dyn Fn() -> bool,
+    ) -> Option<Value> {
+        None
+    }
     fn doctor_visible(&self) -> Result<bool, ErrorCode> {
         Ok(false)
     }
@@ -155,29 +166,51 @@ impl ServerHandler for Server {
                 schema,
             ));
         }
+        let (list, run) = self.project()?.task_visibility().map_err(rejection)?;
+        if list {
+            tools.push(Tool::new(
+                "task_list",
+                "List enabled tasks for this binding.",
+                json!({"type":"object","properties":{},"required":[],"additionalProperties":false})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ));
+        }
+        if run {
+            tools.push(Tool::new("task_run","Run a previously confirmed named build.",
+                json!({"type":"object","properties":{"taskId":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[a-z][a-z0-9_-]*$"}},"required":["taskId"],"additionalProperties":false}).as_object().unwrap().clone()));
+        }
         Ok(ListToolsResult::with_all_items(tools))
     }
     async fn call_tool(
         &self,
         params: CallToolRequestParams,
-        _: RequestContext<RoleServer>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let project = self.project.as_ref().map_err(|e| rejection(*e))?;
         let arguments = Value::Object(params.arguments.unwrap_or_default());
-        let report = match params.name.as_ref() {
-            NAME => project.call(arguments),
+        let value = match params.name.as_ref() {
+            NAME => json!(project.call(arguments)),
+            "task_list" | "task_run" => {
+                let project = project.clone();
+                tokio::task::spawn_blocking(move || {
+                    project.tasks(params.name.as_ref(), arguments, &|| ctx.ct.is_cancelled())
+                })
+                .await
+                .map_err(|_| rejection(ErrorCode::InternalError))?
+                .ok_or_else(|| ErrorData::invalid_params("Unknown tool", None))?
+            }
             "toolchain_doctor" => {
                 let project = project.clone();
-                tokio::task::spawn_blocking(move || project.doctor(arguments))
+                tokio::task::spawn_blocking(move || project.doctor(arguments).map(|r| json!(r)))
                     .await
                     .map_err(|_| rejection(ErrorCode::InternalError))?
                     .ok_or_else(|| ErrorData::invalid_params("Unknown tool", None))?
             }
             _ => return Err(ErrorData::invalid_params("Unknown tool", None)),
         };
-        let ok = report.ok;
-        let value =
-            serde_json::to_value(report).map_err(|_| rejection(ErrorCode::InternalError))?;
+        let ok = value["ok"] == true;
         let result = if ok {
             CallToolResult::structured(value)
         } else {

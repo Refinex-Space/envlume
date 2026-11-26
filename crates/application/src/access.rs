@@ -76,7 +76,11 @@ impl<R: Repository> Session<R> {
     }
 
     pub fn task_list(&self) -> Report {
-        self.dispatch("task_list", serde_json::json!({}), |_, request| {
+        self.task_list_with(serde_json::json!({}))
+    }
+
+    pub fn task_list_with(&self, arguments: Value) -> Report {
+        self.dispatch("task_list", arguments, |_, request| {
             Ok((
                 Payload::Tasks {
                     tasks: crate::tasks::visible_tasks(request.snapshot()),
