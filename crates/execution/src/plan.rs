@@ -286,7 +286,12 @@ pub fn prepare(
                 jdk.version.clone().ok_or(ErrorCode::ToolchainMissing)?,
             );
             versions.insert(
-                "maven".into(),
+                if maven.source == "wrapper" {
+                    "maven-wrapper-declared"
+                } else {
+                    "maven"
+                }
+                .into(),
                 maven.version.clone().ok_or(ErrorCode::ToolchainMissing)?,
             );
             let mut env = child_environment(home, temp, &[jhome.join("bin")])?;

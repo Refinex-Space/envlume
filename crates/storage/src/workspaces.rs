@@ -99,11 +99,7 @@ impl Store {
             return Err(ManagementError::InvalidPath);
         }
         self.workspace_write(|tx| {
-            let row = by_id(tx, binding)?;
-            let observed = discover(origin).map_err(|_| ManagementError::WorkspaceChanged)?;
-            if row.state != "TRUSTED" || !still_valid(&row) || !row.matches(&observed) {
-                return Err(ManagementError::WorkspaceChanged);
-            }
+            let row = Self::verified_workspace(tx, binding, origin)?;
             let lookup = "SELECT id, rules_json FROM toolchain_profiles WHERE project_id=?1 AND name=?2";
             let existing = tx.query_row(lookup, params![row.project_id.0, name.as_str()], |r| {
                 Ok((envlume_domain::ProfileId(r.get(0)?), r.get::<_, String>(1)?))

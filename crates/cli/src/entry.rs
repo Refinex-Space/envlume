@@ -10,7 +10,7 @@ use envlume_mcp::Resolution;
 use envlume_storage::{Store, StorePaths};
 use std::{ffi::OsString, process::ExitCode};
 
-const USAGE: &str = "Usage: envlume task list --binding <id> | envlume task enable|disable|run|cancel <name> --binding <id> [--json] | envlume --version | envlume doctor [--binding <id> [--profile <name>]] [--json] | envlume toolchain configure --binding <id> --profile <name> [--tool <name> <constraint> [--path <absolute>]]... [--mise] [--json] | envlume project list [--json] | envlume project add <path> [--project <id>] [--json] | envlume project inspect --path <path> [--json] | envlume project revoke --binding <id> [--json] | envlume project delete --project <id> [--json] | envlume mcp --binding <uuid>";
+const USAGE: &str = "Usage: envlume task list --binding <id> [--json] | envlume task enable <name> --binding <id> [--timeout <seconds>] [--json] | envlume task disable|run|cancel <name> --binding <id> [--json] | envlume --version | envlume doctor [--binding <id> [--profile <name>]] [--json] | envlume toolchain configure --binding <id> --profile <name> [--tool <name> <constraint> [--path <absolute>]]... [--mise] [--json] | envlume project list [--json] | envlume project add <path> [--project <id>] [--json] | envlume project inspect --path <path> [--json] | envlume project revoke --binding <id> [--json] | envlume project delete --project <id> [--json] | envlume mcp --binding <uuid>";
 
 pub fn run(
     args: &[OsString],

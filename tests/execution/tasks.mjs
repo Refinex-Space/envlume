@@ -251,6 +251,13 @@ await until(() => pids().length >= 3, "dead caller task");
 lost.proc.kill("SIGKILL");
 await lost.done;
 await gone();
+const revoked = start();
+await until(() => pids().length >= 3, "running grant");
+cli(task("disable", "node-build", id));
+const stopped = await revoked.done;
+assert.equal(stopped.code, 3);
+assert.match(report(stopped.out, "task_run").summary, /cancelled/);
+await gone();
 file("mode", "ok");
 approve([...task("enable", "node-build", id), "--timeout", "3"]);
 assert.equal(
@@ -272,7 +279,7 @@ assert.equal(
   "POLICY_DENIED",
 );
 console.log(
-  "T07: Node build, protected environment, failed build, bounded output, two slots, cancel, EOF, killed caller and timeout passed.",
+  "T07: Node " + process.versions.node + " build, protected environment, failed build, bounded output, two slots, cancel, EOF, killed caller, live revoke and timeout passed.",
 );
 
 // A real JUnit test under Maven's test lifecycle verifies the selected JVM and environment.

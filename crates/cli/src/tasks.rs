@@ -141,7 +141,9 @@ fn supervise(template: Template, id: BindingId, machine: bool) -> Result<u8> {
         "--binding",
         &id.0.to_string(),
     ])
-    .stdin(Stdio::piped());
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
     if machine {
         cmd.arg("--json");
     }
@@ -164,20 +166,25 @@ fn supervise(template: Template, id: BindingId, machine: bool) -> Result<u8> {
         worker.wait()?;
         return Err(e.into());
     }
-    loop {
+    // Detached workers cannot write to a Windows caller's console handles.
+    // Relay only the worker's report and diagnostics through dedicated pipes.
+    let mut stdout = worker.stdout.take().expect("worker stdout");
+    let mut stderr = worker.stderr.take().expect("worker stderr");
+    let out = thread::spawn(move || io::copy(&mut stdout, &mut io::stdout().lock()));
+    let err = thread::spawn(move || io::copy(&mut stderr, &mut io::stderr().lock()));
+    let status = loop {
         if let Some(status) = worker.try_wait()? {
-            return Ok(status.code().and_then(|v| v.try_into().ok()).unwrap_or(7));
+            break status;
         }
         if caller.disconnected() {
             drop(lifetime);
-            return Ok(worker
-                .wait()?
-                .code()
-                .and_then(|v| v.try_into().ok())
-                .unwrap_or(7));
+            break worker.wait()?;
         }
         thread::sleep(Duration::from_millis(20));
-    }
+    };
+    out.join().map_err(|_| ErrorCode::InternalError)??;
+    err.join().map_err(|_| ErrorCode::InternalError)??;
+    Ok(status.code().and_then(|v| v.try_into().ok()).unwrap_or(7))
 }
 fn worker(
     paths: &StorePaths,

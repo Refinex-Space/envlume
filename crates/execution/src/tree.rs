@@ -109,9 +109,11 @@ impl Tree {
             Foundation::{WAIT_FAILED, WAIT_OBJECT_0},
             System::Threading::WaitForSingleObject,
         };
+        // KillOnDrop owns the JobObjectChild and does not expose its process
+        // handle. Borrow the native leader while retaining both wrappers.
         let handle = self
             .child
-            .process_handle()
+            .try_inner_child()
             .ok_or(io::ErrorKind::Unsupported)?;
         match unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) } {
             WAIT_OBJECT_0 => return self.stop().map(Some),

@@ -88,6 +88,26 @@ envlume doctor --binding <binding-id> --profile default --json
 
 解析依次使用显式路径、持久化版本约束或经确认的 mise 静态版本、项目约定、本机安装。显式路径失效后，报告会提示修复。可选的 `--mise` 读取当前项目 `mise.toml` 或 `.mise.toml` 的 `[tools]` 数字版本并保存快照；修改文件后须再次确认才会更新。诊断只读取 wrapper 元数据和 Maven settings 的存在状态。报告中的路径已摘要化，`repair` 给出需要执行的操作。[T06 验收与支持范围](docs/plan/tasks/T06-toolchain-doctor.md)
 
+### 运行具名任务
+
+在已登记、已选择工具链 profile 的工作区根目录运行。将示例中的绑定 ID 替换为 `envlume project inspect --path . --json` 返回的 `binding.bindingId`。
+
+```sh
+envlume task enable maven-test --binding <binding-id> --timeout 600
+envlume task run maven-test --binding <binding-id> --json
+envlume task enable node-build --binding <binding-id>
+envlume task list --binding <binding-id> --json
+envlume task run node-build --binding <binding-id> --json
+envlume task cancel node-build --binding <binding-id>
+envlume task disable node-build --binding <binding-id>
+```
+
+启用时在本机终端输入 `enable`，首次构建输入 `run`。仓库的脚本和插件会以当前系统用户的权限运行。Maven wrapper 还会展示声明的 HTTPS 分发地址及可选的 wrapper JAR 地址，需要单独输入 `download`。修改 wrapper、分发地址、任务超时或选定的 profile 规则后须重新确认。自动化调用可使用已有确认，缺少确认时返回 `POLICY_DENIED`。
+
+`maven-test` 执行 Maven 的 `-B -ntp test`，`node-build` 使用项目选定的本机包管理器执行 `run build`。子进程使用绑定的工具、独立构建主目录和按次创建的临时目录。同一用户最多同时运行两项任务，默认超时 600 秒，启用时可指定 1–3600 秒。`cancel` 停止该绑定下指定名称的所有运行实例，`disable` 同时撤销后续运行授权。
+
+JSON 中的 `result.exitCode` 是构建进程的退出码。超时返回 CLI 退出码 6，取消或缺少授权返回 3。每条输出流仅从前 32 KiB 提取允许的构建事件，摘要返回字节数，并在超限时标明 `truncated`。T07 提供请求和执行编号，T08 接入证据持久化、查询及 MCP 任务入口。[T07 任务与验证](docs/plan/tasks/T07-named-task-runner.md)
+
 ### 构建与验证
 
 以下命令适用于 macOS 终端和 Windows PowerShell。从新检出开始，先执行上面的锁定安装。
