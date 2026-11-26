@@ -48,6 +48,7 @@ impl Template {
     }
 }
 
+#[non_exhaustive]
 pub struct AuthorizedTask {
     pub binding: BindingId,
     pub project: ProjectId,

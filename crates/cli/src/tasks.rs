@@ -6,7 +6,7 @@ use envlume_application::{
     workspaces::ManagementError,
 };
 use envlume_domain::{Actor, BindingId, RequestId};
-use envlume_execution::{ParentWatch, Review, Slot};
+use envlume_execution::{Caller, Review, Slot};
 use envlume_storage::{LocalRegistration, Store, StorePaths};
 use serde_json::json;
 use std::{
@@ -128,8 +128,8 @@ fn first_use(
     )?)
 }
 fn supervise(template: Template, id: BindingId, machine: bool) -> Result<u8> {
-    let parent = ParentWatch::capture()?;
-    if envlume_execution::disconnected() || parent.gone() {
+    let caller = Caller::capture()?;
+    if caller.disconnected() {
         return Err(io::Error::from(io::ErrorKind::Interrupted).into());
     }
     let mut cmd = Command::new(env::current_exe()?);
@@ -167,7 +167,7 @@ fn supervise(template: Template, id: BindingId, machine: bool) -> Result<u8> {
         if let Some(status) = worker.try_wait()? {
             return Ok(status.code().and_then(|v| v.try_into().ok()).unwrap_or(7));
         }
-        if envlume_execution::disconnected() || parent.gone() {
+        if caller.disconnected() {
             drop(lifetime);
             return Ok(worker
                 .wait()?
@@ -265,13 +265,14 @@ fn worker(
     Ok(code)
 }
 fn private_home(path: &Path) -> io::Result<()> {
-    let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
-    {
+    let created = {
         use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    match builder.create(path) {
+        fs::DirBuilder::new().mode(0o700).create(path)
+    };
+    #[cfg(not(unix))]
+    let created = fs::create_dir(path);
+    match created {
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
         r => r?,
     }

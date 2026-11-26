@@ -2,7 +2,7 @@
 mod caller;
 mod limit;
 mod tree;
-pub use caller::{ParentWatch, disconnected};
+pub use caller::Caller;
 use envlume_domain::{EvidenceId, RequestId, UtcDateTime};
 pub use limit::{Slot, cancel};
 use serde::{Deserialize, Serialize};
@@ -31,26 +31,44 @@ const STREAM_LIMIT: u64 = 32 * 1024;
 pub struct OutputSummary {
     pub bytes: u64,
     pub truncated: bool,
+    pub events: Vec<String>,
 }
 fn drain(mut pipe: impl Read + Send + 'static) -> mpsc::Receiver<io::Result<OutputSummary>> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let result = (|| {
             let mut bytes = 0u64;
+            let mut prefix = Vec::new();
             let mut buf = [0; 8192];
             loop {
                 match pipe.read(&mut buf) {
                     Ok(0) => break,
-                    Ok(n) => bytes = bytes.saturating_add(n as u64),
+                    Ok(n) => {
+                        bytes = bytes.saturating_add(n as u64);
+                        let remaining = STREAM_LIMIT as usize - prefix.len();
+                        prefix.extend_from_slice(&buf[..n.min(remaining)]);
+                    }
                     Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                     Err(e) => return Err(e),
                 }
             }
-            // The public summary retains sizes only. Arbitrary repository text
-            // may contain credentials; never persist or forward the raw stream.
+            // Forward only fixed vocabulary. Repository text and arbitrary
+            // key/value data never leave this bounded, in-memory prefix.
+            let mut events = Vec::new();
+            for line in prefix.split(|b| *b == b'\n') {
+                let event = match line.trim_ascii() {
+                    b"[INFO] BUILD SUCCESS" => "BUILD SUCCESS",
+                    b"[INFO] BUILD FAILURE" => "BUILD FAILURE",
+                    _ => continue,
+                };
+                if !events.iter().any(|s| s == event) {
+                    events.push(event.to_owned());
+                }
+            }
             Ok(OutputSummary {
                 bytes,
                 truncated: bytes > STREAM_LIMIT,
+                events,
             })
         })();
         let _ = tx.send(result);

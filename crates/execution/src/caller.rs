@@ -1,24 +1,37 @@
 //! A CLI caller may disconnect without sending an explicit cancellation.
 #[cfg(unix)]
-pub fn disconnected() -> bool {
-    let mut fds = [
-        libc::pollfd {
-            fd: 0,
-            events: 0,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: 1,
-            events: 0,
-            revents: 0,
-        },
-    ];
-    unsafe { libc::poll(fds.as_mut_ptr(), 2, 0) };
-    fds.iter()
-        .any(|fd| fd.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0)
+fn input_closed() -> bool {
+    let mut info = std::mem::MaybeUninit::<libc::stat>::uninit();
+    if unsafe { libc::fstat(0, info.as_mut_ptr()) } != 0 {
+        return true;
+    }
+    let kind = unsafe { info.assume_init() }.st_mode & libc::S_IFMT;
+    if kind == libc::S_IFSOCK {
+        // A half-closed socketpair can report readable EOF without POLLHUP.
+        let mut byte = 0u8;
+        return unsafe {
+            libc::recv(
+                0,
+                (&mut byte as *mut u8).cast(),
+                1,
+                libc::MSG_PEEK | libc::MSG_DONTWAIT,
+            )
+        } == 0;
+    }
+    kind == libc::S_IFIFO && hung_up(0)
+}
+#[cfg(unix)]
+fn hung_up(fd: libc::c_int) -> bool {
+    let mut descriptor = libc::pollfd {
+        fd,
+        events: 0,
+        revents: 0,
+    };
+    unsafe { libc::poll(&mut descriptor, 1, 0) };
+    descriptor.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0
 }
 #[cfg(windows)]
-pub fn disconnected() -> bool {
+fn input_closed() -> bool {
     use windows_sys::Win32::{
         Foundation::{ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_NOT_CONNECTED, GetLastError},
         Storage::FileSystem::{FILE_TYPE_PIPE, GetFileType},
@@ -102,5 +115,27 @@ impl ParentWatch {
             windows_sys::Win32::System::Threading::WaitForSingleObject(self.0.as_raw_handle(), 0)
                 != windows_sys::Win32::Foundation::WAIT_TIMEOUT
         }
+    }
+}
+
+/// A pre-closed input pipe is normal for a headless one-shot invocation.
+/// Only an open caller pipe subsequently closing is a disconnect.
+pub struct Caller {
+    parent: ParentWatch,
+    watch_input: bool,
+}
+impl Caller {
+    pub fn capture() -> std::io::Result<Self> {
+        Ok(Self {
+            parent: ParentWatch::capture()?,
+            watch_input: !input_closed(),
+        })
+    }
+    pub fn disconnected(&self) -> bool {
+        #[cfg(unix)]
+        if hung_up(1) {
+            return true;
+        }
+        self.parent.gone() || (self.watch_input && input_closed())
     }
 }

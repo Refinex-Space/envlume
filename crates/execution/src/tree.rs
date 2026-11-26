@@ -45,11 +45,26 @@ impl Tree {
         self.stop().map(Some)
     }
     pub fn stop(&mut self) -> io::Result<ExitStatus> {
-        if !self.reaped {
-            // The direct child is still ours and has not been reaped.
-            let result = unsafe { libc::kill(-(self.child.id() as i32), libc::SIGKILL) };
-            if result < 0 && io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH) {
-                return Err(io::Error::last_os_error());
+        let group = -(self.child.id() as i32);
+        if !self.reaped && unsafe { libc::kill(group, libc::SIGKILL) } < 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                // Darwin returns EPERM for a group containing only its zombie
+                // leader. Accept that case only after reaping our own child and
+                // verifying that no group remains. Never signal a recycled PID.
+                if error.raw_os_error() != Some(libc::EPERM) {
+                    return Err(error);
+                }
+                let Some(status) = self.child.try_wait()? else {
+                    return Err(error);
+                };
+                self.reaped = true;
+                if unsafe { libc::kill(group, 0) } < 0
+                    && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+                {
+                    return Ok(status);
+                }
+                return Err(error);
             }
         }
         let status = self.child.wait()?;
@@ -108,5 +123,24 @@ impl Tree {
     pub fn stop(&mut self) -> io::Result<ExitStatus> {
         self.child.start_kill()?;
         self.child.wait()
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    #[test]
+    fn observes_exit_without_reusing_a_reaped_pid() {
+        let mut command = Command::new("/usr/bin/true");
+        let mut tree = Tree::spawn(&mut command).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if let Some(status) = tree.finished().unwrap() {
+                assert!(status.success());
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
 }

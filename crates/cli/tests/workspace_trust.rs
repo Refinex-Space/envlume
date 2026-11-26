@@ -95,11 +95,15 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
         };
     loop {
         if let Some(status) = child.try_wait().unwrap() {
-            return if status.success() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            };
+            if !status.success() {
+                let tail: Vec<u8> = rx.try_iter().flatten().take(8192).collect();
+                eprintln!(
+                    "Confirmed CLI exited {status:?}: {}",
+                    String::from_utf8_lossy(&tail)
+                );
+                return ExitCode::FAILURE;
+            }
+            return ExitCode::SUCCESS;
         }
         if std::time::Instant::now() > deadline {
             child.kill().unwrap();
