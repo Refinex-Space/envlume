@@ -91,15 +91,7 @@ impl<R: Repository> Session<R> {
                 return Err(ErrorCode::InternalError.into());
             };
             let state = request.snapshot();
-            let profile = state
-                .profiles
-                .iter()
-                .find(|p| {
-                    Some(p.id) == state.binding.profile_id
-                        && p.project_id == state.project.id
-                        && p.name == *name
-                })
-                .ok_or(ErrorCode::ToolchainMissing)?;
+            let profile = selected_profile(state, name)?;
             let tools = inspector.diagnose(&state.binding.canonical_path, profile)?;
             Ok((Payload::Doctor { tools }, None))
         })
@@ -176,6 +168,21 @@ impl<R: Repository> Session<R> {
         report.duration_ms = start.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
         report
     }
+}
+
+fn selected_profile<'a>(
+    state: &'a BindingSnapshot,
+    name: &Alias,
+) -> Result<&'a ToolchainProfile, ErrorCode> {
+    state
+        .profiles
+        .iter()
+        .find(|p| {
+            Some(p.id) == state.binding.profile_id
+                && p.project_id == state.project.id
+                && p.name == *name
+        })
+        .ok_or(ErrorCode::ToolchainMissing)
 }
 
 fn remote_enabled(t: &EnvironmentTarget) -> bool {
@@ -351,12 +358,7 @@ impl<'a> Resolved<'a> {
                 None,
             ),
             Self::Doctor(name) => {
-                let profile = request
-                    .snapshot
-                    .profiles
-                    .iter()
-                    .find(|p| p.project_id == request.context.project_id && p.name == *name)
-                    .ok_or(ErrorCode::ToolchainMissing)?;
+                let profile = selected_profile(request.snapshot(), name)?;
                 (
                     Payload::Doctor {
                         tools: cases.toolchain_doctor(request, profile)?,

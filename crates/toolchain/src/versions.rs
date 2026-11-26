@@ -7,7 +7,18 @@ pub(crate) fn version(s: &str) -> Option<&str> {
     if s.len() > 64 || s.is_empty() {
         return None;
     }
-    for ch in s.bytes() {
+    let numeric = if let Some((base, qualifier)) = ["-alpha-", "-beta-", "-rc-"]
+        .iter()
+        .find_map(|tag| s.split_once(tag))
+    {
+        if qualifier.is_empty() || !qualifier.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        base
+    } else {
+        s
+    };
+    for ch in numeric.bytes() {
         match ch {
             b'0'..=b'9' => digit = false,
             b'.' | b'_' | b'+' | b'-' if !digit => digit = true,
@@ -25,7 +36,7 @@ fn parts(s: &str) -> Option<Vec<u64>> {
         .collect()
 }
 fn clause(s: &str) -> Option<(&str, &str)> {
-    let op = [">=", "<=", "==", ">", "<", "=", "^", "~"]
+    let op = ["~=", ">=", "<=", "==", ">", "<", "=", "^", "~"]
         .into_iter()
         .find(|p| s.starts_with(p))
         .unwrap_or("");
@@ -38,6 +49,9 @@ pub fn valid_requirement(s: &str) -> bool {
         || (!s.is_empty()
             && s.len() <= 96
             && s.split("||").all(|group| {
+                if group.split(',').any(|s| s.trim().is_empty()) {
+                    return false;
+                }
                 let mut tokens = group.split([',', ' ']).filter(|s| !s.is_empty()).peekable();
                 tokens.peek().is_some() && tokens.all(|t| clause(t).is_some())
             }))
@@ -46,6 +60,7 @@ pub(crate) fn matches(actual: &str, requirement: &str) -> bool {
     if requirement == "*" {
         return true;
     }
+    let raw = actual;
     let Some(actual) = parts(actual) else {
         return false;
     };
@@ -58,7 +73,15 @@ pub(crate) fn matches(actual: &str, requirement: &str) -> bool {
                 return false;
             };
             if op.is_empty() || op == "==" || op == "=" {
+                if n.contains(['+', '-']) {
+                    return version(raw) == version(n);
+                }
                 return actual.starts_with(&want);
+            }
+            if op == "~=" {
+                return want.len() >= 2
+                    && actual.starts_with(&want[..want.len() - 1])
+                    && actual >= want;
             }
             if op == "^" || op == "~" {
                 let v = Version::new(
@@ -81,4 +104,37 @@ pub(crate) fn matches(actual: &str, requirement: &str) -> bool {
             }
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn numeric_constraints_cover_ranges_prefixes_and_explicit_builds() {
+        for (constraint, yes, no) in [
+            (">=18 <23", "22.1.0", "23.0.0"),
+            ("^1.2.3", "1.9.0", "2.0.0"),
+            ("~2.1", "2.1.4", "2.2.0"),
+            ("~=3.10.2", "3.10.14", "3.11.0"),
+            ("==3.12.*", "3.12.2", "3.13.0"),
+            ("8 || 17", "17.0.11", "21.0.1"),
+            ("17.0.11+9", "17.0.11+9", "17.0.11+8"),
+        ] {
+            assert!(valid_requirement(constraint), "{constraint}");
+            assert!(matches(yes, constraint), "{constraint}");
+            assert!(!matches(no, constraint), "{constraint}");
+        }
+        for invalid in [
+            "",
+            ">=",
+            ">=1,,<2",
+            "||8",
+            "18 ||",
+            "latest",
+            "1\nPRIVATE",
+            "https://private.invalid",
+        ] {
+            assert!(!valid_requirement(invalid), "{invalid}");
+        }
+    }
 }

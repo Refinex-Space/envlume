@@ -85,37 +85,44 @@ impl Store {
         if encoded.len() > 65536 {
             return Err(ManagementError::InvalidPath);
         }
-        self.workspace_write(|tx|{
-            let row=by_id(tx,binding)?;
-            let observed=discover(origin).map_err(|_|ManagementError::WorkspaceChanged)?;
-            if row.state!="TRUSTED" || !still_valid(&row) || !row.matches(&observed){return Err(ManagementError::WorkspaceChanged);}
-            let sql="SELECT id,rules_json FROM toolchain_profiles WHERE project_id=?1 AND name=?2";
-            let existing=tx.query_row(sql,params![row.project_id.0,name.as_str()],|r|Ok((envlume_domain::ProfileId(r.get(0)?),r.get::<_,String>(1)?)))
-                .optional().map_err(database_error)?;
-            let id=if let Some((id,old))=existing {
-                if old!=encoded {
-                    let used="SELECT 1 FROM workspace_bindings WHERE profile_id=?1 AND id<>?2 AND trust_state='TRUSTED'";
-                    if tx.prepare(used).map_err(database_error)?.exists(params![id.0,binding.0]).map_err(database_error)? {
+        self.workspace_write(|tx| {
+            let row = by_id(tx, binding)?;
+            let observed = discover(origin).map_err(|_| ManagementError::WorkspaceChanged)?;
+            if row.state != "TRUSTED" || !still_valid(&row) || !row.matches(&observed) {
+                return Err(ManagementError::WorkspaceChanged);
+            }
+            let lookup = "SELECT id, rules_json FROM toolchain_profiles WHERE project_id=?1 AND name=?2";
+            let existing = tx.query_row(lookup, params![row.project_id.0, name.as_str()], |r| {
+                Ok((envlume_domain::ProfileId(r.get(0)?), r.get::<_, String>(1)?))
+            }).optional().map_err(database_error)?;
+            let id = if let Some((id, old)) = existing {
+                if old != encoded {
+                    let used = "SELECT 1 FROM workspace_bindings
+                        WHERE profile_id=?1 AND id<>?2 AND trust_state='TRUSTED'";
+                    if tx.prepare(used).map_err(database_error)?
+                        .exists(params![id.0, binding.0]).map_err(database_error)? {
                         return Err(ManagementError::SharedProfile);
                     }
-                    tx.execute("UPDATE toolchain_profiles SET rules_json=?2 WHERE id=?1",params![id.0,encoded]).map_err(database_error)?;
+                    let update = "UPDATE toolchain_profiles SET rules_json=?2 WHERE id=?1";
+                    tx.execute(update, params![id.0, encoded]).map_err(database_error)?;
                 }
                 id
-            }else{
-                let id=envlume_domain::ProfileId::generate();
-                let insert="INSERT INTO toolchain_profiles(id,project_id,name,rules_json,created_at)
+            } else {
+                let id = envlume_domain::ProfileId::generate();
+                let insert = "INSERT INTO toolchain_profiles(id,project_id,name,rules_json,created_at)
                     VALUES(?1,?2,?3,?4,CAST(unixepoch('subsec')*1000 AS INTEGER))";
-                tx.execute(insert,params![id.0,row.project_id.0,name.as_str(),encoded]).map_err(database_error)?;
+                tx.execute(insert, params![id.0, row.project_id.0, name.as_str(), encoded]).map_err(database_error)?;
                 id
             };
-            tx.execute("UPDATE workspace_bindings SET profile_id=?2 WHERE id=?1",params![binding.0,id.0]).map_err(database_error)?;
-            let retire="UPDATE capability_grants SET revoked_at=expires_at WHERE binding_id=?1
+            let select = "UPDATE workspace_bindings SET profile_id=?2 WHERE id=?1";
+            tx.execute(select, params![binding.0, id.0]).map_err(database_error)?;
+            let retire = "UPDATE capability_grants SET revoked_at=expires_at WHERE binding_id=?1
                 AND capability='toolchain.inspect' AND revoked_at IS NULL AND expires_at<=unixepoch('subsec')*1000";
-            tx.execute(retire,[binding.0]).map_err(database_error)?;
-            let grant="INSERT INTO capability_grants(id,project_id,binding_id,capability)
+            tx.execute(retire, [binding.0]).map_err(database_error)?;
+            let grant = "INSERT INTO capability_grants(id,project_id,binding_id,capability)
                 SELECT ?1,?2,?3,'toolchain.inspect' WHERE NOT EXISTS(SELECT 1 FROM capability_grants
                 WHERE binding_id=?3 AND capability='toolchain.inspect' AND revoked_at IS NULL)";
-            tx.execute(grant,params![GrantId::generate().0,row.project_id.0,binding.0]).map_err(database_error)?;
+            tx.execute(grant, params![GrantId::generate().0, row.project_id.0, binding.0]).map_err(database_error)?;
             Ok(id)
         })
     }

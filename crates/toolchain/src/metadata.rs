@@ -109,11 +109,13 @@ fn pom_java(text: &str) -> Option<String> {
 }
 #[derive(Default)]
 pub(crate) struct Hints {
+    pub additional: BTreeMap<&'static str, String>,
     pub constraints: BTreeMap<&'static str, String>,
     pub wrappers: BTreeMap<&'static str, Option<String>>,
     pub manager: Option<String>,
     pub locks: Vec<&'static str>,
     pub venv: bool,
+    pub remote: &'static str,
     pub git: &'static str,
     pub rust: bool,
 }
@@ -141,9 +143,12 @@ impl Hints {
                 }
             }
         }
-        if let Some(v) = text(".nvmrc") {
-            h.constraints
-                .insert("node", v.trim().trim_start_matches('v').to_owned());
+        if let Some(v) = text(".nvmrc")
+            && let Some(engine) = h
+                .constraints
+                .insert("node", v.trim().trim_start_matches('v').into())
+        {
+            h.additional.insert("node", engine);
         }
         for (file, manager) in [
             ("package-lock.json", "npm"),
@@ -166,11 +171,24 @@ impl Hints {
         {
             h.constraints.insert("python", v);
         }
-        if let Some(v) = text(".python-version") {
-            h.constraints.insert("python", v.trim().to_owned());
+        if let Some(v) = text(".python-version")
+            && let Some(req) = h.constraints.insert("python", v.trim().to_owned())
+        {
+            h.additional.insert("python", req);
         }
         h.venv = fs::symlink_metadata(root.join(".venv")).is_ok();
         h.git = envlume_workspace::discover(root).map_or("unavailable", |w| w.git_kind);
+        h.remote = match text(".git/config") {
+            Some(cfg)
+                if cfg
+                    .lines()
+                    .any(|l| l.trim_start().starts_with("[remote \"")) =>
+            {
+                "configured"
+            }
+            Some(_) => "none",
+            None => "not inspected",
+        };
         h.rust = project_file(root, "Cargo.toml").is_some();
         for (tool, sh, win, file, prefix) in [
             (
@@ -211,6 +229,29 @@ impl Hints {
 pub(crate) fn venv(root: &Path) -> Option<(PathBuf, String)> {
     let cfg = read(&project_file(root, ".venv/pyvenv.cfg")?)?;
     let v = version(prop(&cfg, "version").or_else(|| prop(&cfg, "version_info"))?)?;
+    // Windows can leave a native redirector behind after the base Python was
+    // uninstalled. Check its recorded installation without running the venv.
+    let home = Path::new(prop(&cfg, "home")?);
+    if !home.is_absolute() {
+        return None;
+    }
+    let home = envlume_workspace::local_canonical(home).ok()?;
+    if home.starts_with(root) {
+        return None;
+    }
+    let minor = v.split('.').take(2).collect::<Vec<_>>().join(".");
+    let names = if cfg!(windows) {
+        vec!["python.exe".into()]
+    } else {
+        vec!["python3".into(), "python".into(), format!("python{minor}")]
+    };
+    if !names
+        .iter()
+        .filter_map(|name| envlume_workspace::local_canonical(&home.join(name)).ok())
+        .any(|p| !p.starts_with(root) && crate::executable(&p) && crate::probe::native(&p))
+    {
+        return None;
+    }
     let bin = if cfg!(windows) { "Scripts" } else { "bin" };
     let base = root.join(".venv").join(bin);
     if linked(&fs::symlink_metadata(&base).ok()?) {
@@ -263,4 +304,32 @@ pub fn mise_rules(root: &Path) -> Result<Vec<ToolRule>, &'static str> {
         return Err("No supported version pins in [tools]");
     }
     Ok(rules)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn orphaned_venv_launcher_is_not_a_working_interpreter() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = dir.path().join(".venv");
+        let bin = v.join(if cfg!(windows) { "Scripts" } else { "bin" });
+        fs::create_dir_all(&bin).unwrap();
+        let python = bin.join(if cfg!(windows) {
+            "python.exe"
+        } else {
+            "python"
+        });
+        let template = std::env::current_exe().unwrap();
+        fs::copy(template, &python).unwrap();
+        fs::write(
+            v.join("pyvenv.cfg"),
+            format!(
+                "home = {}\nversion = 3.12.0",
+                dir.path().join("removed-python-home").display()
+            ),
+        )
+        .unwrap();
+        assert!(venv(dir.path()).is_none());
+    }
 }

@@ -15,23 +15,31 @@ use std::{
     process::ExitCode,
 };
 
-type Failure = (&'static str, &'static str, u8);
-const INPUT: Failure = (
-    "INVALID_INPUT",
+enum Failure {
+    Input(&'static str),
+    Application(ErrorCode),
+    Management(ManagementError),
+}
+const INPUT: Failure = Failure::Input(
     "Check doctor/profile arguments, tool names, absolute paths and numeric version constraints.",
-    2,
 );
+impl Failure {
+    fn diagnostic(self) -> (serde_json::Value, &'static str, u8) {
+        match self {
+            Self::Input(msg) => (json!("INVALID_INPUT"), msg, 2),
+            Self::Application(code) => (json!(code), code.summary(), code.exit_code()),
+            Self::Management(err) => {
+                let (code, msg, exit) = err.diagnostic();
+                (json!(code), msg, exit)
+            }
+        }
+    }
+}
 fn text(s: &OsStr) -> Result<&str, Failure> {
     s.to_str().ok_or(INPUT)
 }
 fn id(s: &OsStr) -> Result<BindingId, Failure> {
     text(s)?.parse().map(BindingId).map_err(|_| INPUT)
-}
-fn app_error(err: ErrorCode) -> Failure {
-    ("DOCTOR_UNAVAILABLE", err.summary(), err.exit_code())
-}
-fn storage(err: StorageError) -> Failure {
-    ManagementError::Storage(err).diagnostic()
 }
 fn execute(
     args: &[OsString],
@@ -40,12 +48,12 @@ fn execute(
 ) -> Result<u8, Failure> {
     match args {
         [cmd] if cmd == "doctor" => {
-            let report = LocalToolchain::host_doctor().map_err(app_error)?;
+            let report = LocalToolchain::host_doctor().map_err(Failure::Application)?;
             if json_mode {
                 println!(
                     "{}",
                     serde_json::to_string(&report)
-                        .map_err(|_| app_error(ErrorCode::InternalError))?
+                        .map_err(|_| Failure::Application(ErrorCode::InternalError))?
                 );
             } else {
                 for t in report.tools {
@@ -70,13 +78,14 @@ fn execute(
                 [flag, name] if flag == "--profile" => text(name)?,
                 _ => return Err(INPUT),
             };
-            let session = registration::session(locate(), id(binding)?).map_err(app_error)?;
+            let session =
+                registration::session(locate(), id(binding)?).map_err(Failure::Application)?;
             let report = session.toolchain_doctor(json!({"profile":profile}), &LocalToolchain);
             if json_mode {
                 println!(
                     "{}",
                     serde_json::to_string(&report)
-                        .map_err(|_| app_error(ErrorCode::InternalError))?
+                        .map_err(|_| Failure::Application(ErrorCode::InternalError))?
                 );
             } else if let Some(Payload::Doctor { tools }) = &report.result {
                 for t in tools {
@@ -103,11 +112,14 @@ fn execute(
         {
             let id = id(binding)?;
             let name = Alias::try_from(text(name)?.to_owned()).map_err(|_| INPUT)?;
-            let store = Store::open(locate().map_err(storage)?).map_err(storage)?;
+            let store = Store::open(
+                locate().map_err(|e| Failure::Management(ManagementError::Storage(e)))?,
+            )
+            .map_err(|e| Failure::Management(ManagementError::Storage(e)))?;
             let root = std::env::current_dir().map_err(|_| INPUT)?;
-            let inspected = inspect_project(&store, &root).map_err(|e| e.diagnostic())?;
+            let inspected = inspect_project(&store, &root).map_err(Failure::Management)?;
             if inspected.binding.binding_id != id || inspected.binding.state != "TRUSTED" {
-                return Err(ManagementError::WorkspaceChanged.diagnostic());
+                return Err(Failure::Management(ManagementError::WorkspaceChanged));
             }
             let mut rules: Vec<ToolRule> = Vec::new();
             let mut import = false;
@@ -157,9 +169,7 @@ fn execute(
                 }
             }
             if import {
-                for rule in mise_rules(&inspected.binding.canonical_path)
-                    .map_err(|msg| ("INVALID_INPUT", msg, 2))?
-                {
+                for rule in mise_rules(&inspected.binding.canonical_path).map_err(Failure::Input)? {
                     if !rules.iter().any(|r| r.tool == rule.tool) {
                         rules.push(rule);
                     }
@@ -187,11 +197,11 @@ fn execute(
                 }
             }
             if !registration::confirm(&prompt, "configure") {
-                return Err(ManagementError::ConfirmationRequired.diagnostic());
+                return Err(Failure::Management(ManagementError::ConfirmationRequired));
             }
             let profile = store
                 .configure_toolchain(id, &root, &name, &rules)
-                .map_err(|e| e.diagnostic())?;
+                .map_err(Failure::Management)?;
             if json_mode {
                 println!(
                     "{}",
@@ -215,7 +225,8 @@ pub fn run(
     };
     match execute(args, machine, locate) {
         Ok(code) => ExitCode::from(code),
-        Err((code, summary, exit)) => {
+        Err(failure) => {
+            let (code, summary, exit) = failure.diagnostic();
             if machine {
                 println!(
                     "{}",

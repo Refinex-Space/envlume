@@ -170,8 +170,21 @@ assert.ok(
   !JSON.stringify(eight).includes(canary) &&
     !JSON.stringify(eight).includes("tool homes"),
 );
+mkdirSync(join(first, ".mvn", "wrapper"), { recursive: true });
+file(join(first, windows ? "mvnw.cmd" : "mvnw"), "fixture: never execute");
+file(
+  join(first, ".mvn", "wrapper", "maven-wrapper.properties"),
+  "distributionUrl=https://example.invalid/apache-maven-4.0.0-rc-7-bin.zip",
+);
+configure(first, a, "default", "--tool", "jdk", "17", "--path", modern);
+const crossCompile = doctor(first, a);
+assert.equal(get(crossCompile, "jdk").repair, null);
+assert.equal(get(crossCompile, "maven").repair, null);
 configure(first, a, "default", "--mise");
 file(join(first, "mise.toml"), '[tools]\njava="21"\n');
+const mismatchedBuild = get(doctor(first, a), "maven");
+assert.equal(mismatchedBuild.version, "4.0.0-rc-7");
+assert.match(mismatchedBuild.repair, /JDK 17/);
 assert.match(get(doctor(first, a), "jdk").pathSummary, /approved-mise/);
 assert.equal(get(doctor(first, a), "jdk").version, "1.8.0_412");
 assert.equal(get(doctor(second, b), "jdk").version, "17.0.11");
@@ -251,3 +264,34 @@ assert.equal(JSON.stringify(env), before);
 console.log(
   "T06: offline native fixture probes selected JDK 8 and 17 independently with host JDK 21; Maven pairing, saved mise pins, CLI/MCP diagnostics, redaction and revocation passed.",
 );
+
+// Windows hosted images publish these three installed JDKs. Compare the real
+// tools on the installed-CLI pass, separately from the deterministic fixtures.
+if (
+  windows &&
+  process.env.T05_NATIVE_CLI &&
+  process.env.GITHUB_ACTIONS === "true"
+) {
+  const homes = [8, 17, 21].map((n) => {
+    const home = process.env[`JAVA_HOME_${n}_X64`];
+    assert.ok(home, `Missing hosted JDK ${n}`);
+    return home;
+  });
+  env.JAVA_HOME = homes[2];
+  const realA = register(first);
+  configure(first, realA, "default", "--tool", "jdk", "8", "--path", homes[0]);
+  configure(second, b, "default", "--tool", "jdk", "17", "--path", homes[1]);
+  const read = (p, binding) => get(doctor(p, binding), "jdk");
+  const j8 = read(first, realA),
+    j17 = read(second, b);
+  const j21 = cli(second, "doctor").tools.find((t) => t.tool === "jdk");
+  assert.equal(j8.repair, null);
+  assert.equal(j17.repair, null);
+  assert.match(j8.version, /^(1\.8\.|8\.)/);
+  assert.match(j17.version, /^17\./);
+  assert.equal(j21.status, "available");
+  assert.match(j21.version, /^21\./);
+  console.log(
+    `Installed JDKs: first=${j8.version}, second=${j17.version}, host=${j21.version}; java and javac verified.`,
+  );
+}

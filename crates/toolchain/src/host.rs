@@ -7,6 +7,7 @@ use std::{
 #[derive(Default)]
 pub(crate) struct Host {
     pub bins: Vec<PathBuf>,
+    pub gui_bins: Vec<PathBuf>,
     pub preferred: BTreeMap<&'static str, Vec<PathBuf>>,
     pub homes: BTreeMap<&'static str, Vec<PathBuf>>,
     pub mise: Option<PathBuf>,
@@ -102,7 +103,7 @@ impl Host {
             }
             roots.push(("rustc", rustup.join("toolchains")));
             roots.push(("cargo", rustup.join("toolchains")));
-            h.bins.push(user.join(".local/bin"));
+            h.gui_bins.push(user.join(".local/bin"));
         }
         #[cfg(target_os = "macos")]
         {
@@ -114,7 +115,7 @@ impl Host {
                 "/Applications/Xcode.app/Contents/Developer/usr/bin",
                 "/usr/bin",
             ] {
-                h.bins.push(p.into());
+                h.gui_bins.push(p.into());
             }
             for base in ["/opt/homebrew/opt", "/usr/local/opt"] {
                 for name in [
@@ -146,7 +147,7 @@ impl Host {
                     ] {
                         roots.push(("jdk", p.join(dir)));
                     }
-                    h.bins.extend([
+                    h.gui_bins.extend([
                         p.join("nodejs"),
                         p.join("Git/cmd"),
                         p.join("Docker/Docker/resources/bin"),
@@ -160,7 +161,7 @@ impl Host {
                 roots.push(("python", p.join("Programs/Python")));
             }
             if let Some(p) = dirs::data_dir() {
-                h.bins.push(p.join("npm"));
+                h.gui_bins.push(p.join("npm"));
             }
         }
         for (tool, root) in roots {

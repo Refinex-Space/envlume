@@ -116,7 +116,31 @@ fn matches(tool: &str, actual: &str, req: &str) -> bool {
     } else {
         actual
     };
+    let req = if tool == "jdk" {
+        req.strip_prefix("1.").unwrap_or(req)
+    } else {
+        req
+    };
     versions::matches(actual, req)
+}
+// Minimum JVM for Maven itself, independent of a project's compiler target.
+fn maven_minimum_java(version: &str) -> Option<u32> {
+    let base = version.split('-').next()?;
+    let mut fields = base.split('.');
+    match (fields.next()?, fields.next()?.parse::<u32>().ok()?) {
+        ("4", _)
+            if version
+                .split_once("-alpha-")
+                .and_then(|(_, n)| n.parse::<u32>().ok())
+                .is_some_and(|n| n <= 12) =>
+        {
+            Some(8)
+        }
+        ("4", _) => Some(17),
+        ("3", minor) if minor >= 9 => Some(8),
+        ("3", 3..=8) => Some(7),
+        _ => None,
+    }
 }
 fn vendor(s: Option<&str>) -> &'static str {
     let v = s.unwrap_or("").to_ascii_lowercase();
@@ -155,7 +179,13 @@ struct Found {
     home: Option<PathBuf>,
     broken: Option<&'static str>,
 }
-fn package_version(exe: &Path, launcher: &Path, tool: &str) -> Option<String> {
+fn package_version(
+    host: &Host,
+    workspace: Option<&Path>,
+    exe: &Path,
+    launcher: &Path,
+    tool: &str,
+) -> Option<String> {
     let bin = launcher.parent()?;
     let base = bin.parent()?;
     let mut manifests = vec![
@@ -171,7 +201,10 @@ fn package_version(exe: &Path, launcher: &Path, tool: &str) -> Option<String> {
             .map(|p| p.join("package.json")),
     );
     for p in manifests {
-        if let Some(pkg) = read(&p).and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        if let Some(pkg) = host
+            .permitted(&p, workspace)
+            .and_then(|p| read(&p))
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
             && pkg["name"].as_str() == Some(tool)
             && let Some(v) = pkg["version"].as_str().and_then(versions::version)
         {
@@ -212,7 +245,10 @@ fn inspect(
     match tool {
         "jdk" => {
             let home = exe.parent()?.parent()?;
-            let release = read(&home.join("release")).unwrap_or_default();
+            let release = host
+                .permitted(&home.join("release"), workspace)
+                .and_then(|p| read(&p))
+                .unwrap_or_default();
             let declared = prop(&release, "JAVA_VERSION").and_then(versions::version);
             f.version = declared.map(str::to_owned);
             f.details.push(format!(
@@ -261,6 +297,7 @@ fn inspect(
                 if let Some(dir) = host.permitted(&dir, workspace) {
                     f.version = children(&dir)
                         .iter()
+                        .filter(|p| fs::symlink_metadata(p).is_ok_and(|m| m.is_file()))
                         .filter_map(|p| {
                             p.file_name()?
                                 .to_str()?
@@ -276,7 +313,9 @@ fn inspect(
                 }
             }
         }
-        "npm" | "pnpm" | "yarn" => f.version = package_version(&exe, launcher, tool),
+        "npm" | "pnpm" | "yarn" => {
+            f.version = package_version(host, workspace, &exe, launcher, tool)
+        }
         "docker" | "mise" => (), // presence only, including Docker with its daemon stopped
         _ => f.version = probe::installed_version(&exe, tool, cwd, deadline),
     }
@@ -351,6 +390,13 @@ impl Host {
                     .map(|n| ("search-path", bin.join(n))),
             );
         }
+        for bin in &self.gui_bins {
+            found.extend(
+                names(tool)
+                    .into_iter()
+                    .map(|n| ("platform-dir", bin.join(n))),
+            );
+        }
         if let Some(homes) = self.homes.get(tool) {
             for home in homes {
                 found.extend(
@@ -420,25 +466,36 @@ impl Host {
             && let Some(v) = hints.wrappers.get(tool)
         {
             item.source = "wrapper";
-            item.path_summary = Some(format!(
-                "<workspace>/{}",
-                names(if tool == "maven" { "mvnw" } else { "gradlew" })[0].trim_end_matches(".exe")
-            ));
+            let file = match (tool, cfg!(windows)) {
+                ("maven", true) => "mvnw.cmd",
+                ("maven", false) => "mvnw",
+                (_, true) => "gradlew.bat",
+                (_, false) => "gradlew",
+            };
+            item.path_summary = Some(format!("<workspace>/{file}"));
             item.version = v.clone();
             item.status = "metadata-only";
+            if v.is_none() {
+                item.problem(
+                    "unverified",
+                    "Check the local wrapper distribution version before approving a task.",
+                );
+            }
             item.details
                 .push("Wrapper metadata only; task approval required before use".into());
             return item;
         }
-        if tool == "python"
-            && hints.venv
-            && rule.is_none_or(|r| r.selected_path.is_none() && r.priority != MISE_PRIORITY)
-        {
+        if tool == "python" && hints.venv && rule.is_none() {
             item.source = "venv";
             item.path_summary = Some("<workspace>/.venv".into());
             if let Some((path, v)) = workspace.and_then(metadata::venv) {
                 item.version = Some(v.clone());
-                if matches(tool, &v, req) {
+                if matches(tool, &v, req)
+                    && hints
+                        .additional
+                        .get(tool)
+                        .is_none_or(|r| valid_requirement(r) && matches(tool, &v, r))
+                {
                     item.executable = Some(path);
                     item.status = "metadata-only";
                 } else {
@@ -454,6 +511,17 @@ impl Host {
                 );
             }
             return item;
+        }
+        let extra = hints.additional.get(tool);
+        if let Some(v) = extra {
+            item.details.push(format!(
+                "project constraint {}",
+                if valid_requirement(v) {
+                    v
+                } else {
+                    "unsupported"
+                }
+            ));
         }
         let mut seen = HashSet::new();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -476,12 +544,34 @@ impl Host {
             };
             let presence = matches!(tool, "docker" | "mise") && req == "*";
             let good = f.broken.is_none()
-                && (presence || f.version.as_deref().is_some_and(|v| matches(tool, v, req)));
-            if item.path_summary.is_none() || good {
+                && (presence
+                    || f.version.as_deref().is_some_and(|v| {
+                        matches(tool, v, req)
+                            && extra.is_none_or(|r| valid_requirement(r) && matches(tool, v, r))
+                    }));
+            if item.path_summary.is_none()
+                || (item.version.is_none() && f.version.is_some())
+                || good
+            {
                 item.source = origin;
                 item.version = f.version;
-                item.details = f.details;
-                item.path_summary = Some(format!("<installation>/{}", names(tool)[0]));
+                item.details
+                    .retain(|d| d.starts_with("project constraint "));
+                item.details.extend(f.details);
+                let file = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .filter(|n| {
+                        names(tool)
+                            .iter()
+                            .any(|known| known.eq_ignore_ascii_case(n))
+                    })
+                    .unwrap_or(tool);
+                item.path_summary = Some(if matches!(tool, "jdk" | "maven" | "gradle") {
+                    format!("<{tool}-home>/bin/{file}")
+                } else {
+                    format!("<installation>/{file}")
+                });
                 if good {
                     item.status = if presence { "present" } else { "available" };
                     item.executable = Some(f.exe);
@@ -489,7 +579,12 @@ impl Host {
                     item.repair = None;
                     break;
                 }
-                let repair=f.broken.unwrap_or(if item.version.is_some(){"Select an installed version matching the constraint or update the local profile."}else{"Select a verified local installation; this launcher did not provide a version."});
+                let fallback = if item.version.is_some() {
+                    "Select an installed version matching the constraint or update the local profile."
+                } else {
+                    "Select a verified local installation; this launcher did not provide a version."
+                };
+                let repair = f.broken.unwrap_or(fallback);
                 item.problem(
                     if item.version.is_some() {
                         "conflict"
@@ -514,13 +609,25 @@ impl Host {
         }
         if rule.is_some()
             && let Some(native) = native
-            && (!valid_requirement(native)
-                || item
-                    .version
-                    .as_deref()
-                    .is_some_and(|v| !matches(tool, v, native)))
         {
-            item.problem("conflict","The selected tool conflicts with the project declaration. Align the profile and project versions.");
+            let declared = if valid_requirement(native) {
+                native.as_str()
+            } else {
+                "unsupported"
+            };
+            item.details.push(format!("project declaration {declared}"));
+            // Maven compiler release/source is a compilation target. A user can
+            // deliberately use a newer JDK to build for an older target.
+            let compatible = |actual: &str| {
+                if tool == "jdk" && native.parse::<u32>().is_ok() {
+                    matches(tool, actual, &format!(">={native}"))
+                } else {
+                    valid_requirement(native) && matches(tool, actual, native)
+                }
+            };
+            if item.version.as_deref().is_some_and(|v| !compatible(v)) {
+                item.problem("conflict","The selected tool conflicts with the project declaration. Align the profile and project versions.");
+            }
         }
         item
     }
@@ -554,6 +661,12 @@ impl Host {
                     && let Some(v) = &java
                 {
                     item.details.push(format!("paired JDK {v}"));
+                    if item.tool == "maven"
+                        && let Some(required) = item.version.as_deref().and_then(maven_minimum_java)
+                        && !matches("jdk", v, &format!(">={required}"))
+                    {
+                        item.problem("conflict",&format!("Select JDK {required} or newer for this Maven distribution, or select a compatible Maven version."));
+                    }
                 } else if item.executable.is_some() || item.source == "wrapper" {
                     item.problem("conflict", "Select a working JDK Home for the build tool.");
                 }
@@ -563,6 +676,7 @@ impl Host {
                     if self
                         .settings
                         .as_ref()
+                        .and_then(|p| self.permitted(p, workspace))
                         .is_some_and(|p| fs::symlink_metadata(p).is_ok_and(|m| m.is_file()))
                     {
                         "user settings configured"
@@ -591,8 +705,28 @@ impl Host {
                     );
                 }
             }
+            if item.tool == "maven"
+                && let Some(home) = item
+                    .executable
+                    .as_deref()
+                    .and_then(Path::parent)
+                    .and_then(Path::parent)
+            {
+                let settings = self.permitted(&home.join("conf/settings.xml"), workspace);
+                item.details.push(
+                    if settings.is_some_and(|p| p.is_file()) {
+                        "installation settings configured"
+                    } else {
+                        "installation settings absent"
+                    }
+                    .into(),
+                );
+            }
             if item.tool == "git" && workspace.is_some() {
-                item.details.push(format!("workspace: {}", hints.git));
+                item.details.push(format!(
+                    "workspace: {}; remote: {}",
+                    hints.git, hints.remote
+                ));
             }
             if item.tool == "cargo" && hints.rust {
                 item.details.push("Cargo.toml present".into());
@@ -747,5 +881,78 @@ mod tests {
             resolve(&[rule("maven", "3.8", Some(active), 0)]).status,
             "conflict"
         );
+    }
+}
+
+#[cfg(test)]
+mod inventory_tests {
+    use super::*;
+    #[test]
+    fn gui_fallback_and_settings_status_use_only_redacted_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("sensitive-install-location");
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::create_dir_all(root.join("lib")).unwrap();
+        let launcher = root.join("bin").join(names("maven")[0].clone());
+        fs::write(&launcher, "not executed").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        fs::write(root.join("lib/maven-core-3.9.12.jar"), []).unwrap();
+        let settings = tmp.path().join("settings.xml");
+        fs::write(&settings, "<password>TEST_ONLY_PRIVATE_SETTINGS</password>").unwrap();
+        let host = Host {
+            gui_bins: vec![root.join("bin")],
+            settings: Some(settings),
+            ..Host::default()
+        };
+        let parent: std::collections::BTreeMap<_, _> = std::env::vars_os().collect();
+        let inventory = host.inventory(None, &[]).unwrap();
+        assert_eq!(parent, std::env::vars_os().collect());
+        let maven = inventory.tools.iter().find(|t| t.tool == "maven").unwrap();
+        assert_eq!(maven.source, "platform-dir");
+        assert_eq!(maven.version.as_deref(), Some("3.9.12"));
+        assert!(
+            maven
+                .details
+                .iter()
+                .any(|v| v == "user settings configured")
+        );
+        let wire = serde_json::to_string(&inventory).unwrap();
+        assert!(
+            !wire.contains("TEST_ONLY_PRIVATE_SETTINGS")
+                && !wire.contains("sensitive-install-location")
+        );
+        let jdk = inventory.tools.iter().find(|t| t.tool == "jdk").unwrap();
+        assert_eq!(jdk.status, "missing");
+        assert!(jdk.repair.as_ref().unwrap().contains("JDK Home"));
+    }
+    #[test]
+    fn repository_hints_keep_both_requirements_and_exclude_external_links() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path().join("repo");
+        fs::create_dir(&w).unwrap();
+        fs::write(w.join("package.json"), r#"{"engines":{"node":">=22"}}"#).unwrap();
+        fs::write(w.join(".nvmrc"), "20").unwrap();
+        fs::write(
+            w.join("pyproject.toml"),
+            "[project]\nrequires-python = '>=3.12'",
+        )
+        .unwrap();
+        fs::write(w.join(".python-version"), "3.10").unwrap();
+        let h = Hints::load(&w);
+        assert_eq!(h.constraints["node"], "20");
+        assert_eq!(h.additional["node"], ">=22");
+        assert_eq!(h.constraints["python"], "3.10");
+        assert_eq!(h.additional["python"], ">=3.12");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            fs::write(tmp.path().join("outside"), "[tools]\njava='21'").unwrap();
+            symlink(tmp.path().join("outside"), w.join("mise.toml")).unwrap();
+            assert!(mise_rules(&w).is_err());
+        }
     }
 }
