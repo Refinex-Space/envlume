@@ -48,7 +48,7 @@
 | [T06 解析本机工具链并诊断版本冲突](tasks/T06-toolchain-doctor.md) | 多版本解析和可操作诊断 | T05 | 已完成 |
 | [T07 实现具名任务、首次确认和进程控制](tasks/T07-named-task-runner.md) | 首次授权、子进程环境和取消 | T06 | 已完成 |
 | [T08 贯通任务证据与本地诊断](tasks/T08-execution-evidence.md) | 真实 Maven/Node 执行与证据 | T07 | 已完成 |
-| [R1 验收项目与工具链闭环](tasks/R1-toolchain-review.md) | Java 8 项目与宿主环境对照 | T08 | 待开始 |
+| [R1 验收项目与工具链闭环](tasks/R1-toolchain-review.md) | Java 8 项目与宿主环境对照 | T08 | 已完成（通过） |
 
 ### Phase 2 · 环境与 MySQL
 
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| R1 待评审 | [T08-A01–A03](tasks/T08-execution-evidence.md#执行记录) 已在 macOS arm64 核对真实 Java 8/Spring Boot 成败、CLI/MCP 请求关联、绑定隔离和脱敏清理 | 在 macOS、Windows 复核工作区信任、工具链、执行证据和宿主环境，给出 Phase 1 评审结论 | [R1 验收项目与工具链闭环](tasks/R1-toolchain-review.md) |
+| T09 待开始 | [R1-A01、A02](tasks/R1-toolchain-review.md#执行记录) 已通过。修订 `a22d28d` 在 macOS、Windows 验证 Java 8 成败证据、JDK 17/21 隔离及实时撤权 | 使用 R1 留存的隔离绑定，验证目标、资源归属、风险与逐请求授权 | [T09 落实环境、资源归属与逐请求授权](tasks/T09-target-resource-policy.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 
