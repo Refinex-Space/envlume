@@ -425,9 +425,9 @@ pub fn prepare(
         }
     };
     Ok(Launch {
-        program,
+        program: dunce::simplified(&program).to_owned(),
         args,
-        cwd: task.root.clone(),
+        cwd: dunce::simplified(&task.root).to_owned(),
         env,
         versions,
     })

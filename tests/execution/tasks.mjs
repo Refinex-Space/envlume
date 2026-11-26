@@ -93,7 +93,7 @@ file(
   `
 const fs=require('node:fs'),cp=require('node:child_process');
 const mode=fs.readFileSync('mode','utf8');
-for(const k of ['T07_DB_PASSWORD','GITHUB_TOKEN','SSH_AUTH_SOCK','NODE_OPTIONS','JAVA_TOOL_OPTIONS'])if(process.env[k])throw Error('Unexpected child environment');
+for(const k of ['T07_DB_PASSWORD','GITHUB_TOKEN','SSH_AUTH_SOCK','NODE_OPTIONS','JAVA_TOOL_OPTIONS'])if(process.env[k]){fs.writeFileSync('unexpected-key',k);throw Error('Unexpected child environment');}
 fs.writeFileSync('node-result',JSON.stringify({node:process.execPath,version:process.version,selected:process.env.NODE,cwd:process.cwd()}));
 if(mode==='fail')process.exit(23);
 process.stdout.write('T07_PRIVATE_CREDENTIAL_SENTINEL'+'x'.repeat(70000));
@@ -167,6 +167,18 @@ assert.deepEqual(cli(["task", "list", "--binding", id]).result.tasks, [
 approve(task("run", "node-build", id));
 const success = cli(task("run", "node-build", id));
 assert.equal(success.status, "success");
+if (success.result.exitCode !== 0) {
+  // Read only this fixture's private npm logs. Print fixed diagnostic categories, never log text.
+  const home = join(process.env.T05_FIXTURE_STORE, "tmp", "build-home-" + id);
+  const logs = join(home, process.platform === "win32" ? "npm-cache" : ".npm", "_logs");
+  const debug = existsSync(logs) ? readdirSync(logs).filter(n => n.endsWith(".log"))
+    .map(n => readFileSync(join(logs, n), "utf8")).join("\n") : "";
+  const signatures = ["ENOENT", "EPERM", "EACCES", "EINVAL", "MODULE_NOT_FOUND", "ERR_INVALID_ARG_TYPE", "UNKNOWN",
+    "spawn", "lifecycle", "not recognized", "Missing script", "could not determine", "npm verbose exit"];
+  console.error(JSON.stringify({ report: success, enteredBuild: existsSync(join(root, "node-result")),
+    rejectedKey: existsSync(join(root, "unexpected-key")) ? result("unexpected-key") : null,
+    npmLogs: Boolean(debug), diagnostics: signatures.filter(tag => debug.includes(tag)) }));
+}
 assert.equal(success.result.exitCode, 0);
 assert.match(success.result.stdoutSummary, /truncated/);
 assert.match(success.result.stderrSummary, /truncated/);

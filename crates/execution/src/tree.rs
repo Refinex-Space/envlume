@@ -104,10 +104,10 @@ impl Tree {
     }
     pub fn finished(&mut self) -> io::Result<Option<ExitStatus>> {
         // A build launcher may exit while a background child still owns pipes.
-        use std::os::windows::io::AsRawHandle;
+        use std::os::windows::{io::AsRawHandle, process::ExitStatusExt};
         use windows_sys::Win32::{
             Foundation::{WAIT_FAILED, WAIT_OBJECT_0},
-            System::Threading::WaitForSingleObject,
+            System::Threading::{GetExitCodeProcess, WaitForSingleObject},
         };
         // KillOnDrop owns the JobObjectChild and does not expose its process
         // handle. Borrow the native leader while retaining both wrappers.
@@ -116,7 +116,14 @@ impl Tree {
             .try_inner_child()
             .ok_or(io::ErrorKind::Unsupported)?;
         match unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) } {
-            WAIT_OBJECT_0 => return self.stop().map(Some),
+            WAIT_OBJECT_0 => {
+                let mut code = 0;
+                if unsafe { GetExitCodeProcess(handle.as_raw_handle(), &mut code) } == 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                self.stop()?;
+                return Ok(Some(ExitStatus::from_raw(code)));
+            }
             WAIT_FAILED => return Err(io::Error::last_os_error()),
             _ => (),
         }
@@ -143,6 +150,30 @@ mod tests {
             }
             assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn returns_the_leader_exit_code_after_job_cleanup() {
+        let cmd = std::env::var_os("ComSpec").unwrap();
+        for code in [0, 23] {
+            let mut command = Command::new(&cmd);
+            command.args(["/d", "/c", &format!("exit {code}")]);
+            let mut child = Tree::spawn(command).unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                if let Some(status) = child.finished().unwrap() {
+                    assert_eq!(status.code(), Some(code));
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
         }
     }
 }
