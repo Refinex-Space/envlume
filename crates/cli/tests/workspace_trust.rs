@@ -123,6 +123,9 @@ fn main() -> ExitCode {
         Some("java" | "javac")
     ) {
         assert_eq!(args, ["-version"]);
+        if invoked.with_extension("fixture-observe").exists() {
+            std::fs::write(invoked.with_extension("fixture-probed"), "probed").unwrap();
+        }
         if invoked.with_extension("fixture-delay").exists() {
             thread::sleep(Duration::from_millis(2400));
         }

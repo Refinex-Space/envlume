@@ -33,6 +33,18 @@ pub struct OutputSummary {
     pub truncated: bool,
     pub events: Vec<String>,
 }
+impl std::fmt::Display for OutputSummary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} bytes", self.bytes)?;
+        if self.truncated {
+            write!(f, " (truncated)")?;
+        }
+        for event in &self.events {
+            write!(f, ", {event}")?;
+        }
+        Ok(())
+    }
+}
 fn drain(mut pipe: impl Read + Send + 'static) -> mpsc::Receiver<io::Result<OutputSummary>> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {

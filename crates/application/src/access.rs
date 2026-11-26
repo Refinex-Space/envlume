@@ -75,6 +75,17 @@ impl<R: Repository> Session<R> {
         })
     }
 
+    pub fn task_list(&self) -> Report {
+        self.dispatch("task_list", serde_json::json!({}), |_, request| {
+            Ok((
+                Payload::Tasks {
+                    tasks: crate::tasks::visible_tasks(request.snapshot()),
+                },
+                None,
+            ))
+        })
+    }
+
     pub fn can_inspect_toolchain(&self) -> Result<bool, ErrorCode> {
         let state = self.snapshot()?;
         Ok(state.binding.profile_id.is_some()
@@ -104,31 +115,17 @@ impl<R: Repository> Session<R> {
         run: impl FnOnce(Resolved<'_>, &Authorized<'_>) -> UseCaseResult<(Payload, Option<EvidenceId>)>,
     ) -> Report {
         let start = Instant::now();
+        let operation = crate::input::TOOL_NAMES
+            .iter()
+            .copied()
+            .find(|known| *known == name)
+            .unwrap_or("unknown");
+        let mut report = Report::new(operation);
         let context = RequestContext {
             binding_id: self.binding,
             project_id: self.project,
             actor: self.actor,
-            request_id: RequestId::generate(),
-        };
-        let mut report = Report {
-            schema_version: 1,
-            request_id: context.request_id,
-            timestamp_utc: UtcDateTime::now(),
-            duration_ms: 0,
-            ok: true,
-            operation: crate::input::TOOL_NAMES
-                .iter()
-                .copied()
-                .find(|known| *known == name)
-                .unwrap_or("unknown"),
-            binding_alias: None,
-            target_alias: None,
-            capability: None,
-            evidence_id: None,
-            status: ReportStatus::Success,
-            summary: "Completed",
-            error_code: None,
-            result: None,
+            request_id: report.request_id,
         };
         let response = (|| {
             let call = ToolCall::parse(name, arguments)?;
@@ -154,14 +151,7 @@ impl<R: Repository> Session<R> {
                 report.evidence_id = evidence;
             }
             Err(UseCaseFailure { code, evidence_id }) => {
-                report.ok = false;
-                report.status = if code.exit_code() == 3 {
-                    ReportStatus::Denied
-                } else {
-                    ReportStatus::Failed
-                };
-                report.summary = code.summary();
-                report.error_code = Some(code);
+                report.fail(code, code.summary());
                 report.evidence_id = evidence_id;
             }
         }

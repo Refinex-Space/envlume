@@ -134,6 +134,9 @@ pub fn review(task: &AuthorizedTask) -> Result<Review, ErrorCode> {
                 .ok_or(ErrorCode::ToolchainMissing)?;
             inputs.insert("build", hex(script));
             inputs.insert("manager", node_manager(&task.root)?.into());
+            if let Some(pin) = pkg["packageManager"].as_str() {
+                inputs.insert("packageManager", hex(pin));
+            }
             for name in ["prebuild", "postbuild"] {
                 if let Some(v) = pkg["scripts"][name].as_str() {
                     inputs.insert(name, hex(v));
@@ -161,6 +164,8 @@ pub fn review(task: &AuthorizedTask) -> Result<Review, ErrorCode> {
                 for (key, path) in [
                     ("jar", ".mvn/wrapper/maven-wrapper.jar"),
                     ("source", ".mvn/wrapper/MavenWrapperDownloader.java"),
+                    ("jvmConfig", ".mvn/jvm.config"),
+                    ("mavenConfig", ".mvn/maven.config"),
                 ] {
                     if let Some(bytes) = local_file(&task.root, path, 4 * 1024 * 1024)? {
                         inputs.insert(key, hex(bytes));
@@ -297,6 +302,18 @@ pub fn prepare(
                 if approval.urls.is_empty() {
                     return Err(ErrorCode::PolicyDenied);
                 }
+                // Maven Wrapper starts its own JVM. Override its default user.home
+                // without interpolating any path into the Windows command line.
+                let private = dunce::simplified(home)
+                    .to_str()
+                    .ok_or(ErrorCode::InvalidInput)?;
+                if private.chars().any(|c| c == '"' || c.is_control()) {
+                    return Err(ErrorCode::InvalidInput);
+                }
+                env.insert(
+                    "JAVA_TOOL_OPTIONS".into(),
+                    format!(r#""-Duser.home={private}""#).into(),
+                );
                 #[cfg(unix)]
                 let command = (
                     task.root.join("mvnw"),

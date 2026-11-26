@@ -123,12 +123,13 @@ function localProcessOnly(pid) {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        `@(Get-CimInstance Win32_Process -Filter 'ParentProcessId = ${pid}' -ErrorAction Stop).Count`,
+        // Orphan processes retain their original parent PID after Windows reuses it.
+        `$p=Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' -ErrorAction Stop; if (!$p) { exit 1 }; Get-CimInstance Win32_Process -Filter 'ParentProcessId = ${pid}' -ErrorAction Stop | Where-Object { $_.CreationDate -ge $p.CreationDate } | ForEach-Object { $_.Name }`,
       ],
       { encoding: "utf8" },
     );
     assert.equal(children.status, 0);
-    assert.equal(children.stdout.trim(), "0");
+    assert.equal(children.stdout.trim(), "", "MCP server spawned a child process: " + children.stdout);
   } else {
     const children = spawnSync("pgrep", ["-P", String(pid)], {
       encoding: "utf8",

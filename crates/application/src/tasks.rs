@@ -1,5 +1,9 @@
 //! Closed task vocabulary. Enabling a template never admits caller-provided argv.
-use crate::{ErrorCode, Session, ports::Repository, result::NamedTask};
+use crate::{
+    ErrorCode, Session,
+    ports::{BindingSnapshot, Repository},
+    result::NamedTask,
+};
 use envlume_domain::*;
 use std::{
     path::{Path, PathBuf},
@@ -51,6 +55,7 @@ impl Template {
 #[non_exhaustive]
 pub struct AuthorizedTask {
     pub binding: BindingId,
+    pub binding_alias: Alias,
     pub project: ProjectId,
     pub grant: GrantId,
     pub task: TaskId,
@@ -59,28 +64,24 @@ pub struct AuthorizedTask {
     pub template: Template,
     pub timeout: Duration,
 }
+pub(crate) fn visible_tasks(state: &BindingSnapshot) -> Vec<NamedTask> {
+    let now = UtcDateTime::now();
+    state
+        .tasks
+        .iter()
+        .filter(|t| {
+            t.project_id == state.project.id
+                && t.binding_id.is_none_or(|b| b == state.binding.id)
+                && Template::parse(t.key.as_str()).is_ok_and(|v| v.accepts(t))
+                && state.has_grant(Capability::TaskRun(t.id), now)
+        })
+        .map(|t| NamedTask {
+            task_id: t.key.clone(),
+            timeout_seconds: t.timeout.as_secs() as u32,
+        })
+        .collect()
+}
 impl<R: Repository> Session<R> {
-    pub fn list_tasks(&self) -> Result<Vec<NamedTask>, ErrorCode> {
-        let state = self.snapshot()?;
-        let now = UtcDateTime::now();
-        if !state.has_grant(Capability::TaskInspect, now) {
-            return Err(ErrorCode::PolicyDenied);
-        }
-        Ok(state
-            .tasks
-            .iter()
-            .filter(|t| {
-                t.project_id == state.project.id
-                    && t.binding_id.is_none_or(|b| b == state.binding.id)
-                    && Template::parse(t.key.as_str()).is_ok_and(|v| v.accepts(t))
-                    && state.has_grant(Capability::TaskRun(t.id), now)
-            })
-            .map(|t| NamedTask {
-                task_id: t.key.clone(),
-                timeout_seconds: t.timeout.as_secs() as u32,
-            })
-            .collect())
-    }
     pub fn authorize_task(&self, template: Template) -> Result<AuthorizedTask, ErrorCode> {
         let state = self.snapshot()?;
         let task = state
@@ -111,6 +112,7 @@ impl<R: Repository> Session<R> {
             .ok_or(ErrorCode::ToolchainMissing)?;
         Ok(AuthorizedTask {
             binding: state.binding.id,
+            binding_alias: state.binding.alias,
             root: state.binding.canonical_path,
             project: state.project.id,
             profile,

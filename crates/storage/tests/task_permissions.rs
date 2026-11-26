@@ -36,7 +36,7 @@ fn task_permission_and_first_use_are_distinct_and_scoped_to_one_binding() {
     let s = Session::from_registration(registry(a.clone()), first.binding_id, Actor::Cli).unwrap();
     let t = Template::NodeBuild;
     assert!(matches!(s.authorize_task(t), Err(ErrorCode::PolicyDenied)));
-    assert!(s.list_tasks().is_err());
+    assert_eq!(s.task_list().error_code, Some(ErrorCode::PolicyDenied));
     store.enable_task(first.binding_id, &a, t, 30).unwrap();
     let grant = s.authorize_task(t).unwrap();
     let fingerprint = "1".repeat(64);
@@ -67,7 +67,9 @@ fn task_permission_and_first_use_are_distinct_and_scoped_to_one_binding() {
     assert!(matches!(s.authorize_task(t), Err(ErrorCode::PolicyDenied)));
     db.execute("UPDATE task_definitions SET workspace_relative_dir='.',arguments='[\"run\",\"other\"]' WHERE id=?1",[grant.task.0]).unwrap();
     assert!(matches!(s.authorize_task(t), Err(ErrorCode::PolicyDenied)));
-    assert!(s.list_tasks().unwrap().is_empty());
+    assert!(
+        matches!(s.task_list().result, Some(envlume_application::result::Payload::Tasks { tasks }) if tasks.is_empty())
+    );
     store.revoke(first.binding_id).unwrap();
     assert!(matches!(
         s.authorize_task(t),

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import {
   mkdirSync,
+  copyFileSync,
   writeFileSync,
   readFileSync,
   existsSync,
@@ -10,6 +11,20 @@ import {
   chmodSync,
 } from "node:fs";
 import { join } from "node:path";
+import Ajv2020 from "ajv/dist/2020.js";
+const schema = (name) => JSON.parse(readFileSync(new URL("../contracts/" + name, import.meta.url)));
+const ajv = new Ajv2020({ allowUnionTypes: true });
+const envelope = ajv.compile(schema("report.schema.json"));
+const payloads = Object.fromEntries(schema("tools.json")
+  .filter(({name}) => ["task_list", "task_run"].includes(name))
+  .map(({name, resultSchema}) => [name, ajv.compile(resultSchema)]));
+function report(output, operation) {
+  const value = JSON.parse(output);
+  assert.ok(envelope(value), JSON.stringify(envelope.errors));
+  assert.equal(value.operation, operation);
+  if (value.ok) assert.ok(payloads[operation](value.result), JSON.stringify(payloads[operation].errors));
+  return value;
+}
 const [exe, helper] = process.argv.slice(2);
 const root = join(process.cwd(), "T07 空格 build");
 mkdirSync(root);
@@ -53,7 +68,12 @@ function run(
   );
   return r.stdout;
 }
-const cli = (args, opts) => JSON.parse(run(exe, [...args, "--json"], opts));
+const cli = (args, opts) => {
+  const out = run(exe, [...args, "--json"], opts);
+  return args[0] === "task" && ["list", "run"].includes(args[1])
+    ? report(out, "task_" + args[1])
+    : JSON.parse(out);
+};
 const approve = (args, opts) =>
   run(helper, ["approve", exe, ...args, "--json"], opts);
 const task = (op, key, id) => ["task", op, key, "--binding", id];
@@ -101,19 +121,20 @@ assert.equal(
 );
 approve(["project", "add", root]);
 const id = cli(["project", "inspect", "--path", root]).binding.bindingId;
-approve([
-  "toolchain",
-  "configure",
-  "--binding",
-  id,
-  "--profile",
-  "default",
-  "--tool",
-  "node",
-  "*",
-  "--path",
-  process.execPath,
-]);
+// An installed-tool fixture records version probes outside the workspace.
+const probeRoot = join(process.cwd(), "T07 installed JDK");
+mkdirSync(join(probeRoot, "bin"), { recursive: true });
+for (const name of ["java", "javac"]) {
+  const base = join(probeRoot, "bin", name);
+  const file = base + (process.platform === "win32" ? ".exe" : "");
+  copyFileSync(helper, file);
+  chmodSync(file, 0o755);
+  writeFileSync(base + ".fixture-version", "17.0.10");
+  writeFileSync(base + ".fixture-observe", "");
+}
+const nodeProfile = ["toolchain", "configure", "--binding", id, "--profile", "default",
+  "--tool", "node", "*", "--path", process.execPath];
+approve([...nodeProfile, "--tool", "jdk", "*", "--path", probeRoot]);
 assert.equal(
   cli(task("run", "node-build", id), { code: 3 }).errorCode,
   "POLICY_DENIED",
@@ -138,23 +159,26 @@ assert.equal(
   "POLICY_DENIED",
 );
 assert.ok(!existsSync(join(root, "node-result")));
-assert.deepEqual(cli(["task", "list", "--binding", id]).tasks, [
+for (const name of ["java", "javac"]) assert.ok(!existsSync(join(probeRoot, "bin", name + ".fixture-probed")));
+approve(nodeProfile);
+assert.deepEqual(cli(["task", "list", "--binding", id]).result.tasks, [
   { taskId: "node-build", timeoutSeconds: 60 },
 ]);
 approve(task("run", "node-build", id));
 const success = cli(task("run", "node-build", id));
 assert.equal(success.status, "success");
-assert.equal(success.exitCode, 0);
-assert.ok(success.stdoutSummary.truncated && success.stderrSummary.truncated);
-assert.equal(success.versions.node, process.versions.node);
+assert.equal(success.result.exitCode, 0);
+assert.match(success.result.stdoutSummary, /truncated/);
+assert.match(success.result.stderrSummary, /truncated/);
+assert.ok(success.summary.includes("node=" + process.versions.node));
 assert.ok(success.requestId && success.evidenceId);
 const observed = JSON.parse(result("node-result"));
 assert.equal(observed.version, process.version);
 assert.equal(observed.node, observed.selected);
 file("mode", "fail");
 const failed = cli(task("run", "node-build", id));
-assert.equal(failed.status, "failed");
-assert.notEqual(failed.exitCode, 0);
+assert.match(failed.summary, /Build failed/);
+assert.notEqual(failed.result.exitCode, 0);
 file("mode", "hold");
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 async function until(condition, label) {
@@ -206,18 +230,21 @@ const two = start();
 await until(() => pids().length >= 6, "second task");
 assert.equal(
   cli(task("run", "node-build", id), { code: 3 }).errorCode,
-  "TASK_BUSY",
+  "POLICY_DENIED",
 );
 cli(task("cancel", "node-build", id));
 for (const h of [one, two]) {
   const r = await h.done;
-  assert.equal(JSON.parse(r.out).status, "cancelled");
+  assert.equal(r.code, 3);
+  assert.match(report(r.out, "task_run").summary, /cancelled/);
 }
 await gone();
 const eof = start();
 await until(() => pids().length >= 3, "disconnect task");
 eof.proc.stdin.end();
-assert.equal(JSON.parse((await eof.done).out).status, "cancelled");
+const disconnected = await eof.done;
+assert.equal(disconnected.code, 3);
+assert.match(report(disconnected.out, "task_run").summary, /cancelled/);
 await gone();
 const lost = start();
 await until(() => pids().length >= 3, "dead caller task");
@@ -233,12 +260,13 @@ assert.equal(
 approve(task("run", "node-build", id));
 file("mode", "hold");
 const timed = cli(task("run", "node-build", id), { code: 6 });
-assert.equal(timed.status, "timeout");
+assert.equal(timed.errorCode, "TIMEOUT");
+assert.ok(timed.evidenceId);
 await gone();
 file("mode", "ok");
 assert.equal(cli(task("run", "node-build", id)).status, "success");
 cli(task("disable", "node-build", id));
-assert.deepEqual(cli(["task", "list", "--binding", id]).tasks, []);
+assert.deepEqual(cli(["task", "list", "--binding", id]).result.tasks, []);
 assert.equal(
   cli(task("run", "node-build", id), { code: 3 }).errorCode,
   "POLICY_DENIED",
@@ -300,14 +328,13 @@ assert.match(
   /Tests run: 1, Failures: 0, Errors: 0/,
 );
 const mvn = cli(task("run", "maven-test", id));
-assert.equal(mvn.exitCode, 0);
+assert.equal(mvn.result.exitCode, 0);
 assert.equal(mvn.status, "success");
-assert.ok(mvn.versions.maven && mvn.versions.jdk);
+assert.match(mvn.summary, /maven=\d+\.\d+/);
+assert.match(mvn.summary, /jdk=\d+/);
 console.log(
   "T07: real Maven",
-  mvn.versions.maven,
-  "test passed on selected JDK",
-  mvn.versions.jdk,
+  mvn.summary,
   "with one Surefire assertion group.",
 );
 

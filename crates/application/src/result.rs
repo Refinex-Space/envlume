@@ -210,13 +210,44 @@ pub struct Report {
     pub capability: Option<String>,
     pub duration_ms: u64,
     pub status: ReportStatus,
-    pub summary: &'static str,
+    pub summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<ErrorCode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Payload>,
 }
 impl Report {
+    pub fn new(operation: &'static str) -> Self {
+        Self {
+            schema_version: 1,
+            request_id: RequestId::generate(),
+            timestamp_utc: UtcDateTime::now(),
+            duration_ms: 0,
+            ok: true,
+            operation,
+            binding_alias: None,
+            target_alias: None,
+            capability: None,
+            evidence_id: None,
+            status: ReportStatus::Success,
+            summary: "Completed".into(),
+            error_code: None,
+            result: None,
+        }
+    }
+
+    pub fn fail(&mut self, code: ErrorCode, message: &str) {
+        self.ok = false;
+        self.status = if code.exit_code() == 3 {
+            ReportStatus::Denied
+        } else {
+            ReportStatus::Failed
+        };
+        self.error_code = Some(code);
+        self.result = None;
+        self.summary = message.into();
+    }
+
     pub fn exit_code(&self) -> u8 {
         self.error_code.map_or(0, ErrorCode::exit_code)
     }

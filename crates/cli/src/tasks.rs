@@ -2,10 +2,11 @@ use super::registration::confirm;
 use envlume_application::{
     ErrorCode, Session,
     projects::StorageError,
+    result::{Payload, Report, TaskResult},
     tasks::{AuthorizedTask, Template},
     workspaces::ManagementError,
 };
-use envlume_domain::{Actor, BindingId, RequestId};
+use envlume_domain::{Actor, BindingId, Capability};
 use envlume_execution::{Caller, Review, Slot};
 use envlume_storage::{LocalRegistration, Store, StorePaths};
 use serde_json::json;
@@ -24,47 +25,47 @@ use std::{
     time::{Duration, Instant},
 };
 
-struct Failure(&'static str, &'static str, u8);
+struct Failure(ErrorCode, &'static str);
 impl From<ErrorCode> for Failure {
-    fn from(e: ErrorCode) -> Self {
-        Self(
-            match e {
-                ErrorCode::InvalidInput => "INVALID_INPUT",
-                ErrorCode::BindingRevoked => "BINDING_REVOKED",
-                ErrorCode::ProjectNotTrusted => "PROJECT_NOT_TRUSTED",
-                ErrorCode::PolicyDenied => "POLICY_DENIED",
-                ErrorCode::Timeout => "TIMEOUT",
-                ErrorCode::ToolchainMissing => "TOOLCHAIN_MISSING",
-                _ => "INTERNAL_ERROR",
-            },
-            e.summary(),
-            e.exit_code(),
-        )
+    fn from(code: ErrorCode) -> Self {
+        Self(code, code.summary())
     }
 }
 impl From<StorageError> for Failure {
     fn from(e: StorageError) -> Self {
         Self(
-            "STORAGE_ERROR",
+            if e == StorageError::StorageBusy {
+                ErrorCode::Timeout
+            } else {
+                ErrorCode::InternalError
+            },
             e.message(),
-            if e == StorageError::StorageBusy { 6 } else { 7 },
         )
     }
 }
 impl From<ManagementError> for Failure {
     fn from(e: ManagementError) -> Self {
-        let (c, m, x) = e.diagnostic();
-        Self(c, m, x)
+        use ManagementError::*;
+        let code = match e {
+            Storage(e) => return e.into(),
+            InvalidPath | NotFound => ErrorCode::InvalidInput,
+            WorkspaceChanged => ErrorCode::ProjectNotTrusted,
+            ConfirmationRequired | ProjectMismatch | SharedProfile => ErrorCode::PolicyDenied,
+        };
+        Self(code, e.diagnostic().1)
     }
 }
 impl From<io::Error> for Failure {
     fn from(e: io::Error) -> Self {
         match e.kind() {
-            io::ErrorKind::WouldBlock => Self("TASK_BUSY", "All local task slots are in use.", 3),
-            io::ErrorKind::Interrupted => {
-                Self("CANCELLED", "The caller disconnected or cancelled.", 3)
+            io::ErrorKind::WouldBlock => {
+                Self(ErrorCode::PolicyDenied, "All local task slots are in use.")
             }
-            _ => Self("INTERNAL_ERROR", "Local task control failed.", 7),
+            io::ErrorKind::Interrupted => Self(
+                ErrorCode::PolicyDenied,
+                "The caller disconnected or cancelled.",
+            ),
+            _ => Self(ErrorCode::InternalError, "Local task control failed."),
         }
     }
 }
@@ -200,7 +201,8 @@ fn worker(
         let _ = io::stdin().read(&mut [0]);
         flag.store(true, Ordering::Release);
     });
-    let request = RequestId::generate();
+    let mut report = Report::new("task_run");
+    let request = report.request_id;
     let directory = paths.root().join("tmp");
     let slot = Slot::acquire(&directory, task.binding, task.template, request)?;
     let temp = tempfile::tempdir_in(&directory)?;
@@ -233,37 +235,57 @@ fn worker(
         }
         Ok(false)
     })?;
-    let code = if outcome.status == "timeout" { 6 } else { 0 };
+    report.duration_ms = outcome.duration_ms;
+    report.binding_alias = Some(task.binding_alias);
+    report.capability = Some(Capability::TaskRun(task.task).wire_name());
+    report.evidence_id = Some(outcome.evidence_id);
+    match (outcome.status.as_str(), outcome.exit_code) {
+        ("timeout", _) => report.fail(ErrorCode::Timeout, "Task exceeded its time limit."),
+        ("cancelled", _) => report.fail(ErrorCode::PolicyDenied, "Task cancelled."),
+        (_, Some(code)) => {
+            report.result = Some(Payload::Task(TaskResult {
+                exit_code: code,
+                stdout_summary: outcome.stdout_summary.to_string(),
+                stderr_summary: outcome.stderr_summary.to_string(),
+            }));
+            let verdict = if code == 0 {
+                "Build passed"
+            } else {
+                "Build failed"
+            };
+            let versions = outcome
+                .versions
+                .iter()
+                .map(|(key, version)| format!("{key}={version}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            report.summary = format!("{verdict} ({versions})");
+        }
+        _ => report.fail(
+            ErrorCode::InternalError,
+            "Task terminated without an exit code.",
+        ),
+    }
+    print_report(&report, machine)
+}
+
+fn print_report(report: &Report, machine: bool) -> Result<u8> {
     if machine {
         println!(
             "{}",
-            serde_json::to_string(&outcome).map_err(|_| ErrorCode::InternalError)?
+            serde_json::to_string(report).map_err(|_| ErrorCode::InternalError)?
         );
     } else {
-        println!(
-            "{} {} (exit {:?}, {} ms)\nrequestId: {}\nevidenceId: {}\nstdout: {} bytes{}; stderr: {} bytes{}",
-            task.template.key(),
-            outcome.status,
-            outcome.exit_code,
-            outcome.duration_ms,
-            request.0,
-            outcome.evidence_id.0,
-            outcome.stdout_summary.bytes,
-            if outcome.stdout_summary.truncated {
-                " (truncated)"
-            } else {
-                ""
-            },
-            outcome.stderr_summary.bytes,
-            if outcome.stderr_summary.truncated {
-                " (truncated)"
-            } else {
-                ""
+        println!("{}", report.human_text());
+        if let Some(Payload::Tasks { tasks }) = &report.result {
+            for task in tasks {
+                println!("{}\t{} s", task.task_id.as_str(), task.timeout_seconds);
             }
-        );
+        }
     }
-    Ok(code)
+    Ok(report.exit_code())
 }
+
 fn private_home(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     let created = {
@@ -303,17 +325,7 @@ fn dispatch(
         [op, flag, id] if op == "list" && flag == "--binding" => {
             let id = binding(id)?;
             let (_, db) = open()?;
-            let tasks = session(&db, id)?.list_tasks()?;
-            if machine {
-                println!(
-                    "{}",
-                    json!({"schemaVersion":1,"requestId":RequestId::generate(),"tasks":tasks})
-                );
-            } else {
-                for t in tasks {
-                    println!("{}\t{} s", t.task_id.as_str(), t.timeout_seconds);
-                }
-            }
+            return print_report(&session(&db, id)?.task_list(), machine);
         }
         [op, name, flag, id, rest @ ..] if flag == "--binding" => {
             let template = key(name)?;
@@ -392,15 +404,19 @@ pub fn run(
     };
     match dispatch(args, json, locate) {
         Ok(code) => ExitCode::from(code),
-        Err(Failure(code, msg, exit)) => {
+        Err(Failure(code, msg)) => {
             if json {
-                println!(
-                    "{}",
-                    serde_json::json!({"schemaVersion":1,"requestId":RequestId::generate(),"errorCode":code,"summary":msg})
-                );
+                let operation = match args.first().and_then(|op| op.to_str()) {
+                    Some("run" | "__worker") => "task_run",
+                    Some("list") => "task_list",
+                    _ => "unknown",
+                };
+                let mut report = Report::new(operation);
+                report.fail(code, msg);
+                println!("{}", json!(report));
             }
             eprintln!("{msg}");
-            ExitCode::from(exit)
+            ExitCode::from(code.exit_code())
         }
     }
 }
