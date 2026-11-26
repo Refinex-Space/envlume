@@ -2,6 +2,7 @@
 mod paths;
 mod repository;
 mod schema;
+mod tasks;
 mod workspaces;
 pub use envlume_application::projects::StorageError as Error;
 use envlume_application::projects::{ProjectEntry, ProjectRepository};
@@ -40,6 +41,7 @@ fn connect(path: &Path, writable: bool) -> Result<Connection> {
     Ok(conn)
 }
 
+#[derive(Clone)]
 pub struct Store {
     paths: StorePaths,
 }

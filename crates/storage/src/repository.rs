@@ -135,7 +135,7 @@ pub(super) fn read_snapshot(conn: &Connection, id: BindingId) -> Decode<Option<B
             })
         })?
         .collect::<Decode<Vec<_>>>()?;
-    let sql = "SELECT id,binding_id,task_key,executable,arguments,workspace_relative_dir,timeout_seconds,input,enabled FROM task_definitions
+    let sql = "SELECT id,binding_id,task_key,executable,arguments,workspace_relative_dir,coalesce((SELECT g.timeout_seconds FROM capability_grants g WHERE g.task_id=task_definitions.id AND g.binding_id=?2 AND g.capability='task.run' AND g.revoked_at IS NULL),timeout_seconds),input,enabled FROM task_definitions
         WHERE project_id=?1 AND (binding_id IS NULL OR binding_id=?2) ORDER BY id";
     let tasks = conn
         .prepare(sql)?

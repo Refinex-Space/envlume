@@ -73,6 +73,19 @@ fn stale(conn: &Connection, id: BindingId) -> Result<()> {
     Ok(())
 }
 impl Store {
+    pub(super) fn verified_workspace(
+        tx: &Connection,
+        binding: BindingId,
+        origin: &Path,
+    ) -> Result<BindingInfo> {
+        let row = by_id(tx, binding)?;
+        let observed = discover(origin).map_err(|_| ManagementError::WorkspaceChanged)?;
+        if row.state != "TRUSTED" || !still_valid(&row) || !row.matches(&observed) {
+            return Err(ManagementError::WorkspaceChanged);
+        }
+        Ok(row)
+    }
+
     /// Replace one approved profile, select it, and grant this binding inspection atomically.
     pub fn configure_toolchain(
         &self,
@@ -127,7 +140,10 @@ impl Store {
         })
     }
 
-    fn workspace_write<T>(&self, op: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+    pub(super) fn workspace_write<T>(
+        &self,
+        op: impl FnOnce(&Connection) -> Result<T>,
+    ) -> Result<T> {
         let mut conn = connect(&self.paths.database(), true)?;
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)

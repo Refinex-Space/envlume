@@ -38,6 +38,8 @@ pub struct Selection {
     pub executable: Option<PathBuf>,
     #[serde(skip)]
     pub java_home: Option<PathBuf>,
+    #[serde(skip)]
+    pub package_entry: Option<PathBuf>,
 }
 impl Selection {
     pub fn description(&self) -> String {
@@ -67,6 +69,7 @@ impl Selection {
         self.repair = Some(repair.into());
         self.executable = None;
         self.java_home = None;
+        self.package_entry = None;
     }
 }
 #[derive(Debug, Serialize)]
@@ -182,6 +185,7 @@ struct Found {
     home: Option<PathBuf>,
     broken: Option<&'static str>,
     timed_out: bool,
+    package_entry: Option<PathBuf>,
 }
 fn package_version(
     host: &Host,
@@ -189,7 +193,7 @@ fn package_version(
     exe: &Path,
     launcher: &Path,
     tool: &str,
-) -> Option<String> {
+) -> Option<(String, Option<PathBuf>)> {
     let bin = launcher.parent()?;
     let base = bin.parent()?;
     let mut manifests = vec![
@@ -212,7 +216,32 @@ fn package_version(
             && pkg["name"].as_str() == Some(tool)
             && let Some(v) = pkg["version"].as_str().and_then(versions::version)
         {
-            return Some(v.to_owned());
+            let entry = pkg["bin"]
+                .as_str()
+                .or_else(|| pkg["bin"][tool].as_str())
+                .and_then(|name| {
+                    let relative = Path::new(name);
+                    if relative.is_absolute()
+                        || relative.components().any(|c| {
+                            !matches!(
+                                c,
+                                std::path::Component::Normal(_) | std::path::Component::CurDir
+                            )
+                        })
+                    {
+                        return None;
+                    }
+                    let root = host.permitted(p.parent()?, workspace)?;
+                    host.permitted(&root.join(relative), workspace).filter(|p| {
+                        p.starts_with(&root)
+                            && p.is_file()
+                            && matches!(
+                                p.extension().and_then(|e| e.to_str()),
+                                Some("js" | "cjs" | "mjs")
+                            )
+                    })
+                });
+            return Some((v.to_owned(), entry));
         }
     }
     None
@@ -246,6 +275,7 @@ fn inspect(
         home: None,
         broken: None,
         timed_out: false,
+        package_entry: None,
     };
     match tool {
         "jdk" => {
@@ -333,7 +363,10 @@ fn inspect(
             }
         }
         "npm" | "pnpm" | "yarn" => {
-            f.version = package_version(host, workspace, &exe, launcher, tool)
+            if let Some((version, entry)) = package_version(host, workspace, &exe, launcher, tool) {
+                f.version = Some(version);
+                f.package_entry = entry;
+            }
         }
         "docker" | "mise" => (), // presence only, including Docker with its daemon stopped
         _ => match probe::installed_version(&exe, tool, cwd, deadline) {
@@ -480,6 +513,7 @@ impl Host {
             repair: None,
             executable: None,
             java_home: None,
+            package_entry: None,
         };
         if !valid_requirement(req) {
             item.problem(
@@ -602,6 +636,7 @@ impl Host {
                     item.status = if presence { "present" } else { "available" };
                     item.executable = Some(f.exe);
                     item.java_home = f.home;
+                    item.package_entry = f.package_entry;
                     item.repair = None;
                     break;
                 }
@@ -774,6 +809,26 @@ impl Host {
         })
     }
 }
+/// Select a package manager solely from the project's fixed declarations.
+pub fn node_manager(root: &Path) -> Result<&'static str, ErrorCode> {
+    let hints = Hints::load(root);
+    if hints.locks.len() > 1 {
+        return Err(ErrorCode::ToolchainMissing);
+    }
+    let selected = hints
+        .manager
+        .as_deref()
+        .or(hints.locks.first().copied())
+        .unwrap_or("npm");
+    if hints.locks.first().is_some_and(|m| *m != selected) {
+        return Err(ErrorCode::ToolchainMissing);
+    }
+    ["npm", "pnpm", "yarn"]
+        .into_iter()
+        .find(|m| *m == selected)
+        .ok_or(ErrorCode::ToolchainMissing)
+}
+
 impl LocalToolchain {
     pub fn host_doctor() -> Result<Inventory, ErrorCode> {
         Host::local().inventory(None, &[])

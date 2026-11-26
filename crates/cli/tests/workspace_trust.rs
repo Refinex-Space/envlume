@@ -38,46 +38,61 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
             }
         }
     });
-    let mut output = Vec::new();
-    let mut answered_through = 0;
-    while !output
-        .windows(b"to confirm:".len())
-        .any(|w| w == b"to confirm:")
-    {
-        match rx.recv_timeout(Duration::from_secs(20)) {
-            Ok(bytes) => {
-                output.extend(bytes);
-                // ConPTY inherits the terminal cursor. Like a physical terminal,
-                // answer each cursor-position query before waiting for the prompt.
-                let query = b"\x1b[6n";
-                while let Some(pos) = output[answered_through..]
-                    .windows(query.len())
-                    .position(|b| b == query)
-                {
-                    input.write_all(b"\x1b[1;1R").unwrap();
-                    input.flush().unwrap();
-                    answered_through += pos + query.len();
+    let action = args.get(1).and_then(|v| v.to_str());
+    let word = match (args.first().and_then(|v| v.to_str()), action) {
+        (Some("task"), Some("enable")) => "enable",
+        (Some("task"), Some("run")) => "run",
+        (_, Some("delete")) => "delete",
+        (_, Some("configure")) => "configure",
+        _ => "trust",
+    };
+    let mut answers = vec![word];
+    if word == "run" && env::var_os("T07_EXPECT_DOWNLOAD").is_some() {
+        answers.push("download");
+    }
+    for answer in answers {
+        let mut output = Vec::new();
+        let mut answered_through = 0;
+        let prompt = format!("Type {answer} to confirm:");
+        while !output.windows(prompt.len()).any(|w| w == prompt.as_bytes()) {
+            match rx.recv_timeout(Duration::from_secs(20)) {
+                Ok(bytes) => {
+                    output.extend(bytes);
+                    let query = b"\x1b[6n";
+                    while let Some(pos) = output[answered_through..]
+                        .windows(query.len())
+                        .position(|b| b == query)
+                    {
+                        input.write_all(b"\x1b[1;1R").unwrap();
+                        input.flush().unwrap();
+                        answered_through += pos + query.len();
+                    }
+                }
+                Err(e) => {
+                    let _ = child.kill();
+                    panic!(
+                        "missing {answer} confirmation ({e}): {}",
+                        String::from_utf8_lossy(&output)
+                    );
                 }
             }
-            Err(e) => {
-                let _ = child.kill();
-                panic!(
-                    "missing confirmation prompt ({e}): {}",
-                    String::from_utf8_lossy(&output)
-                );
-            }
         }
+        if answer == "download" {
+            let url = env::var("T07_EXPECT_DOWNLOAD").unwrap();
+            assert!(
+                String::from_utf8_lossy(&output).contains(&url),
+                "distribution URL was not displayed"
+            );
+        }
+        input.write_all(format!("{answer}\r").as_bytes()).unwrap();
+        input.flush().unwrap();
     }
-    let answer = if args.iter().any(|a| a == "delete") {
-        "delete\r"
-    } else if args.iter().any(|a| a == "configure") {
-        "configure\r"
-    } else {
-        "trust\r"
-    };
-    input.write_all(answer.as_bytes()).unwrap();
-    input.flush().unwrap();
-    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let deadline = std::time::Instant::now()
+        + if word == "run" {
+            Duration::from_secs(180)
+        } else {
+            Duration::from_secs(30)
+        };
     loop {
         if let Some(status) = child.try_wait().unwrap() {
             return if status.success() {
@@ -121,10 +136,9 @@ fn main() -> ExitCode {
     if args.first().is_some_and(|s| s == "approve") {
         return approve(Path::new(&args[1]), &args[2..]);
     }
-    if args
-        .first()
-        .is_some_and(|s| s == "project" || s == "mcp" || s == "doctor" || s == "toolchain")
-    {
+    if args.first().is_some_and(|s| {
+        s == "project" || s == "mcp" || s == "doctor" || s == "toolchain" || s == "task"
+    }) {
         let scope = || {
             StorePaths::at(PathBuf::from(
                 env::var_os("T05_FIXTURE_STORE").expect("isolated test root"),
@@ -141,6 +155,7 @@ fn main() -> ExitCode {
     for script in [
         "../../tests/workspace/trust.mjs",
         "../../tests/toolchain/doctor.mjs",
+        "../../tests/execution/tasks.mjs",
     ] {
         let script = Path::new(env!("CARGO_MANIFEST_DIR")).join(script);
         let status = Command::new("node")

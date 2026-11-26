@@ -49,7 +49,7 @@ impl<R: Repository> Session<R> {
         })
     }
 
-    fn snapshot(&self) -> Result<BindingSnapshot, ErrorCode> {
+    pub(crate) fn snapshot(&self) -> Result<BindingSnapshot, ErrorCode> {
         let state = trusted(&self.repository, self.binding)?;
         if state.project.id != self.project {
             return Err(ErrorCode::ProjectNotTrusted);
