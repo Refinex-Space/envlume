@@ -110,7 +110,7 @@ JSON 中的 `result.exitCode` 是构建进程的退出码。超时返回 CLI 退
 
 ### 构建与验证
 
-以下命令适用于 macOS 终端和 Windows PowerShell。从新检出开始，先执行上面的锁定安装。
+以下命令适用于 macOS 终端和 Windows PowerShell。先执行上面的锁定安装，并准备好本机 Maven 3、完整 JDK 与 npm。将 `JAVA_HOME` 指向测试 JDK；全量测试在临时工作区执行一次真实的 Maven 测试和 Node 构建，并从 Maven Central 获取夹具依赖。
 
 ```sh
 pnpm lint

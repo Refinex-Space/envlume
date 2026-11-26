@@ -438,11 +438,11 @@ ChildProcessEnv = SanitizedInheritedEnv
 ```
 
 - Java 执行：设置本次 `JAVA_HOME`、将 `${JAVA_HOME}/bin` 添加到子进程 `PATH` 头部。
-- Maven：优先调用批准的 wrapper 或绝对路径 `mvn`，避免路径劫持。
+- Maven 3 使用所选 JDK 直接加载已解析发行版的 Classworlds 入口，Node 包管理器使用所选 Node 加载已解析的 JS 入口。选用仓库 Maven wrapper 时，先确认脚本和声明的分发地址。[ADR-0011](adr/ADR-0011.md)
 - Node/Python 同理：使用明确解析出的可执行文件，不只信任 `PATH` 第一项。
 - Maven `settings.xml` 可能包含仓库凭据，不回显其内容；检测只报告存在性、路径与敏感字段是否已安全配置。
 - GUI 在 macOS 上可能无法继承终端 `PATH`；因此使用 OS 常见安装目录、用户路径与显式配置相结合的检测机制。
-- Windows 使用 `PathBuf`/`Command` 原生 API，避免将命令串交给 `cmd.exe /c` 或 PowerShell 解释。
+- Windows 使用 `PathBuf`/`Command`。已批准的仓库 `mvnw.cmd` 由系统 `cmd.exe` 在绑定根目录执行，启动参数全部采用固定字面量。
 
 ### 6.4 Task Runner 模型
 
@@ -1101,6 +1101,7 @@ v0.1 正式发布至少完成以下测试矩阵，**任何 P0 失败不得发布
 | [ADR-0008](adr/ADR-0008.md) | 工具链原生发现 + 显式路径，mise 为可选适配 | Accepted |
 | [ADR-0009](adr/ADR-0009.md) | v0.1 仅 MySQL，不提前并行开发 Redis/ES/SSH | Accepted |
 | [ADR-0010](adr/ADR-0010.md) | v0.1 不承诺 OS 级隔离，不暴露任意 Shell/SQL 写接口 | Accepted |
+| [ADR-0011](adr/ADR-0011.md) | 具名构建使用固定启动入口，仓库 Maven wrapper 与分发地址分项确认 | Accepted |
 
 使用 [ADR 模板](adr/TEMPLATE.md) 登记新决策。新增或改变 Accepted ADR 时必须说明**背景、备选方案、决策理由、风险、安全影响、迁移方案和验证证据**。不允许只因“另一个框架更流行”而直接重写架构。
 
