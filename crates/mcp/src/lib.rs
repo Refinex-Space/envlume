@@ -43,6 +43,15 @@ where
     }
 }
 
+impl<R: Repository + Send + Sync> BoundProject for Session<R> {
+    fn visible(&self) -> Result<bool, ErrorCode> {
+        self.can_inspect_project()
+    }
+    fn call(&self, arguments: Value) -> Report {
+        self.project_context(arguments)
+    }
+}
+
 pub type Resolution = Result<Box<dyn BoundProject>, ErrorCode>;
 struct Server {
     project: Resolution,
@@ -67,7 +76,7 @@ impl ServerHandler for Server {
             .with_server_info(Implementation::new("envlume", envlume_application::VERSION))
     }
     async fn discover(&self, _: RequestContext<RoleServer>) -> Result<DiscoverResult, ErrorData> {
-        self.project()?;
+        self.project()?.visible().map_err(rejection)?;
         Ok(DiscoverResult::from_server_info(
             self.supported_protocol_versions().into_owned(),
             self.get_info(),
@@ -78,7 +87,7 @@ impl ServerHandler for Server {
         request: InitializeRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, ErrorData> {
-        self.project()?;
+        self.project()?.visible().map_err(rejection)?;
         context.peer.set_peer_info(request.clone());
         self.negotiate_initialize(&request)
     }

@@ -64,6 +64,23 @@ impl<R: Repository> Session<R> {
     }
 
     pub fn invoke(&self, cases: &impl UseCases, name: &str, arguments: Value) -> Report {
+        self.dispatch(name, arguments, |operation, request| {
+            operation.run(cases, request)
+        })
+    }
+
+    pub fn project_context(&self, arguments: Value) -> Report {
+        self.dispatch("project_context", arguments, |_, request| {
+            Ok((Payload::Project(project_summary(request.snapshot())), None))
+        })
+    }
+
+    fn dispatch(
+        &self,
+        name: &str,
+        arguments: Value,
+        run: impl FnOnce(Resolved<'_>, &Authorized<'_>) -> UseCaseResult<(Payload, Option<EvidenceId>)>,
+    ) -> Report {
         let start = Instant::now();
         let context = RequestContext {
             binding_id: self.binding,
@@ -107,7 +124,7 @@ impl<R: Repository> Session<R> {
                 snapshot: &state,
                 capability,
             };
-            operation.run(cases, &request)
+            run(operation, &request)
         })();
         match response {
             Ok((payload, evidence)) => {
@@ -128,6 +145,72 @@ impl<R: Repository> Session<R> {
         }
         report.duration_ms = start.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
         report
+    }
+}
+
+fn remote_enabled(t: &EnvironmentTarget) -> bool {
+    t.status == Status::Active && t.kind != EnvironmentKind::Prod && t.risk != RiskLevel::Critical
+}
+fn query_enabled(t: &EnvironmentTarget) -> bool {
+    remote_enabled(t)
+        && matches!(t.kind, EnvironmentKind::Dev | EnvironmentKind::Test)
+        && t.risk != RiskLevel::High
+}
+
+fn project_summary(state: &BindingSnapshot) -> ProjectSummary {
+    let now = UtcDateTime::now();
+    let mut targets = Vec::new();
+    let mut capabilities = Vec::new();
+    for grant in &state.grants {
+        if grant.binding_id != state.binding.id
+            || grant.revoked_at.is_some()
+            || grant.expires_at.is_some_and(|t| t <= now)
+        {
+            continue;
+        }
+        match grant.capability {
+            Capability::TaskRun(id)
+                if !state.tasks.iter().any(|t| {
+                    t.id == id
+                        && t.project_id == state.project.id
+                        && t.enabled
+                        && t.binding_id.is_none_or(|b| b == state.binding.id)
+                }) =>
+            {
+                continue;
+            }
+            Capability::DatabaseSchema(scope)
+            | Capability::DatabaseRead(scope)
+            | Capability::ResourceConnect(scope) => {
+                let Some(target) = state.targets.iter().find(|t| {
+                    t.id == scope.target && t.project_id == state.project.id && remote_enabled(t)
+                }) else {
+                    continue;
+                };
+                if matches!(grant.capability, Capability::DatabaseRead(_)) && !query_enabled(target)
+                {
+                    continue;
+                }
+                if !state.resources.iter().any(|r| {
+                    r.target_id == target.id && r.id == scope.resource && r.status == Status::Active
+                }) {
+                    continue;
+                }
+                targets.push(target.alias.clone());
+            }
+            _ => (),
+        }
+        capabilities.push(grant.capability.wire_name());
+    }
+    targets.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    targets.dedup();
+    capabilities.sort();
+    capabilities.dedup();
+    ProjectSummary {
+        project: state.project.name.clone(),
+        workspace: state.binding.alias.as_str().into(),
+        targets,
+        capabilities,
     }
 }
 
@@ -164,7 +247,7 @@ impl<'a> Resolved<'a> {
                     t.project_id == project && t.alias == *target && t.status == Status::Active
                 })
                 .ok_or(ErrorCode::TargetNotAllowed)?;
-            if target.kind == EnvironmentKind::Prod || target.risk == RiskLevel::Critical {
+            if !remote_enabled(target) {
                 return Err(ErrorCode::TargetNotAllowed);
             }
             let resource = state
@@ -199,11 +282,7 @@ impl<'a> Resolved<'a> {
             }
             ToolCall::DatabaseQuery(i) => {
                 let remote = remote(&i.target, &i.resource)?;
-                if !matches!(
-                    remote.target.kind,
-                    EnvironmentKind::Dev | EnvironmentKind::Test
-                ) || remote.target.risk == RiskLevel::High
-                {
+                if !query_enabled(remote.target) {
                     return Err(ErrorCode::TargetNotAllowed);
                 }
                 Self::Query(remote, &i.sql)

@@ -1,11 +1,12 @@
+#[path = "registration.rs"]
+pub mod registration;
 use envlume_application::projects::{StorageError, list_projects};
 use envlume_domain::BindingId;
 use envlume_mcp::Resolution;
 use envlume_storage::{Store, StorePaths};
 use std::{ffi::OsString, process::ExitCode};
 
-const USAGE: &str =
-    "Usage: envlume --version | envlume project list [--json] | envlume mcp --binding <uuid>";
+const USAGE: &str = "Usage: envlume --version | envlume project list [--json] | envlume project add <path> [--project <id>] [--json] | envlume project inspect --path <path> [--json] | envlume project revoke --binding <id> [--json] | envlume project delete --project <id> [--json] | envlume mcp --binding <uuid>";
 
 pub fn run(
     args: &[OsString],
@@ -64,6 +65,8 @@ pub fn run(
                 });
             }
         }
+    } else if args.first().is_some_and(|s| s == "project") {
+        return registration::run(&args[1..], locate);
     } else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);

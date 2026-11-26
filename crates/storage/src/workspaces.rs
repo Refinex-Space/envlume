@@ -1,0 +1,191 @@
+use crate::{Error, Store, connect, database_error, repository::read_snapshot, schema};
+use envlume_application::{
+    ErrorCode,
+    ports::{BindingSnapshot, Repository},
+    workspaces::{BindingInfo, ManagementError, WorkspaceRepository},
+};
+use envlume_domain::{BindingId, GrantId, ProjectId};
+use envlume_workspace::{Workspace, discover};
+use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params};
+use std::path::{Path, PathBuf};
+
+type Result<T> = std::result::Result<T, ManagementError>;
+const INFO:&str="SELECT b.id,b.project_id,p.name,b.alias,coalesce(b.entry_path,b.canonical_path),
+    b.canonical_path,b.trust_state,b.confirmation_source,b.confirmed_at_ms,b.git_fingerprint,b.root_identity
+    FROM workspace_bindings b JOIN projects p ON p.id=b.project_id";
+
+fn info(row: &Row<'_>) -> rusqlite::Result<BindingInfo> {
+    Ok(BindingInfo {
+        binding_id: BindingId(row.get(0)?),
+        project_id: ProjectId(row.get(1)?),
+        project: row.get(2)?,
+        alias: row.get(3)?,
+        entry_path: PathBuf::from(row.get::<_, String>(4)?),
+        canonical_path: PathBuf::from(row.get::<_, String>(5)?),
+        state: row.get(6)?,
+        confirmation_source: row.get(7)?,
+        confirmed_at_ms: row.get(8)?,
+        fingerprint: row.get(9)?,
+        root_identity: row.get(10)?,
+    })
+}
+fn by_id(conn: &Connection, id: BindingId) -> Result<BindingInfo> {
+    conn.query_row(&format!("{INFO} WHERE b.id=?1"), [id.0], info)
+        .optional()
+        .map_err(database_error)?
+        .ok_or(ManagementError::NotFound)
+}
+fn by_path(conn: &Connection, entry: &Path, ws: Option<&Workspace>) -> Result<Option<BindingInfo>> {
+    conn.query_row(&format!("{INFO} WHERE b.entry_path=?1 OR b.canonical_path=?1 OR b.canonical_path=?2 OR b.root_identity=?3
+        ORDER BY (b.trust_state='TRUSTED') DESC,(b.entry_path=?1) DESC,b.created_at DESC,b.rowid DESC LIMIT 1"),
+        params![entry.to_str(),ws.and_then(|w|w.canonical_path.to_str()),ws.map(|w|&w.root_identity)],info)
+        .optional().map_err(database_error).map_err(Into::into)
+}
+fn still_valid(binding: &BindingInfo) -> bool {
+    discover(&binding.entry_path).is_ok_and(|w| binding.matches(&w))
+}
+fn revoke_grants(conn: &Connection, id: BindingId) -> Result<()> {
+    conn.execute(
+        "UPDATE capability_grants SET revoked_at=CAST(unixepoch('subsec')*1000 AS INTEGER)
+        WHERE binding_id=?1 AND revoked_at IS NULL",
+        [id.0],
+    )
+    .map_err(database_error)?;
+    Ok(())
+}
+fn stale(conn: &Connection, id: BindingId) -> Result<()> {
+    if conn.execute("UPDATE workspace_bindings SET trust_state='STALE' WHERE id=?1 AND trust_state IN ('TRUSTED','UNTRUSTED')",[id.0]).map_err(database_error)?!=0 {
+        revoke_grants(conn,id)?;
+    }
+    Ok(())
+}
+impl Store {
+    fn workspace_write<T>(&self, op: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+        let mut conn = connect(&self.paths.database(), true)?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        if schema::version(&tx)? != schema::CURRENT {
+            return Err(Error::InvalidDatabase.into());
+        }
+        let result = op(&tx)?;
+        tx.commit().map_err(database_error)?;
+        Ok(result)
+    }
+}
+
+impl WorkspaceRepository for Store {
+    fn register_confirmed(
+        &self,
+        ws: &Workspace,
+        project: Option<ProjectId>,
+    ) -> Result<BindingInfo> {
+        self.workspace_write(|tx|{
+            if discover(&ws.entry_path).as_ref().ok()!=Some(ws){return Err(ManagementError::WorkspaceChanged);}
+            // A retargeted alias and its new destination can match two separate rows.
+            while let Some(old)=by_path(tx,&ws.entry_path,Some(ws))? {
+                if old.state!="TRUSTED" && old.state!="UNTRUSTED"{break;}
+                if old.state=="TRUSTED" && still_valid(&old) && old.matches(ws) {
+                    if project.is_some_and(|p|p!=old.project_id){return Err(ManagementError::ProjectMismatch);}
+                    return Ok(old);
+                }
+                stale(tx,old.binding_id)?;
+            }
+            let id=BindingId::generate();
+            let timestamp=envlume_domain::UtcDateTime::now().unix_timestamp_nanos()/1_000_000;
+            let now=i64::try_from(timestamp).map_err(|_|Error::StorageUnavailable)?;
+            let name=ws.canonical_path.file_name().and_then(|n|n.to_str()).ok_or(ManagementError::InvalidPath)?;
+            if name.chars().any(char::is_control) || name.trim().is_empty() || name.chars().count()>128{return Err(ManagementError::InvalidPath);}
+            let project_id=if let Some(p)=project{
+                if !tx.prepare("SELECT 1 FROM projects WHERE id=?1 AND deleted_at IS NULL").map_err(database_error)?.exists([p.0]).map_err(database_error)?{
+                    return Err(ManagementError::NotFound);
+                }
+                p
+            }else{
+                let p=ProjectId::generate();
+                tx.execute("INSERT INTO projects(id,name,created_at,updated_at) VALUES(?1,?2,?3,?3)",params![p.0,name,now]).map_err(database_error)?;
+                p
+            };
+            let slug:String=name.chars().filter(|c|c.is_ascii_alphanumeric() || *c=='-').take(24).map(|c|c.to_ascii_lowercase()).collect();
+            let alias=format!("ws-{slug}-{}",id.0.simple());
+            tx.execute("INSERT INTO workspace_bindings(id,project_id,alias,canonical_path,git_fingerprint,trust_state,created_at,entry_path,root_identity,confirmation_source,confirmed_at_ms)
+                VALUES(?1,?2,?3,?4,?5,'TRUSTED',?6,?7,?8,'LOCAL_CLI_TTY',?6)",params![id.0,project_id.0,alias,ws.canonical_path.to_str(),ws.fingerprint,now,ws.entry_path.to_str(),ws.root_identity]).map_err(database_error)?;
+            tx.execute("INSERT INTO capability_grants(id,project_id,binding_id,capability) VALUES(?1,?2,?3,'project.inspect')",
+                params![GrantId::generate().0,project_id.0,id.0]).map_err(database_error)?;
+            by_id(tx,id)
+        })
+    }
+    fn inspect_binding(&self, entry: &Path, ws: Option<&Workspace>) -> Result<BindingInfo> {
+        self.workspace_write(|tx| {
+            let old = by_path(tx, entry, ws)?.ok_or(ManagementError::NotFound)?;
+            if old.state == "TRUSTED" && !still_valid(&old) {
+                stale(tx, old.binding_id)?;
+                return by_id(tx, old.binding_id);
+            }
+            Ok(old)
+        })
+    }
+    fn revoke(&self, id: BindingId) -> Result<()> {
+        self.workspace_write(|tx|{
+            by_id(tx,id)?;
+            tx.execute("UPDATE workspace_bindings SET trust_state='REVOKED',revoked_at=coalesce(revoked_at,CAST(unixepoch('subsec')*1000 AS INTEGER)) WHERE id=?1",[id.0]).map_err(database_error)?;
+            revoke_grants(tx,id)
+        })
+    }
+    fn delete_project(&self, id: ProjectId) -> Result<()> {
+        self.workspace_write(|tx|{
+            let now="CAST(unixepoch('subsec')*1000 AS INTEGER)";
+            if tx.execute(&format!("UPDATE projects SET updated_at=CASE WHEN deleted_at IS NULL THEN {now} ELSE updated_at END,deleted_at=coalesce(deleted_at,{now}) WHERE id=?1"),[id.0]).map_err(database_error)?==0{return Err(ManagementError::NotFound);}
+            tx.execute(&format!("UPDATE workspace_bindings SET trust_state='REVOKED',revoked_at=coalesce(revoked_at,{now}) WHERE project_id=?1"),[id.0]).map_err(database_error)?;
+            tx.execute(&format!("UPDATE capability_grants SET revoked_at={now} WHERE project_id=?1 AND revoked_at IS NULL"),[id.0]).map_err(database_error)?;
+            Ok(())
+        })
+    }
+}
+
+/// Production MCP repository. Origin comes from the local launch directory;
+/// protocol parameters never select a store, binding or path.
+pub struct LocalRegistration {
+    pub store: Store,
+    pub origin: PathBuf,
+}
+impl LocalRegistration {
+    fn checked(&self, id: BindingId) -> Result<Option<BindingSnapshot>> {
+        let mut conn = connect(&self.store.paths.database(), false)?;
+        let tx = conn.transaction().map_err(database_error)?;
+        if schema::version(&tx)? != schema::CURRENT {
+            return Err(Error::InvalidDatabase.into());
+        }
+        let Some(state) = read_snapshot(&tx, id).map_err(database_error)? else {
+            return Ok(None);
+        };
+        if !matches!(state.binding.state, envlume_domain::BindingState::Trusted)
+            || state.project.deleted_at.is_some()
+        {
+            return Ok(Some(state));
+        }
+        let binding = by_id(&tx, id)?;
+        if !still_valid(&binding) {
+            drop(tx);
+            self.store.workspace_write(|tx| stale(tx, id))?;
+            return Err(ManagementError::WorkspaceChanged);
+        }
+        let origin = discover(&self.origin).map_err(|_| ManagementError::ConfirmationRequired)?;
+        if !binding.matches(&origin) {
+            return Err(ManagementError::ConfirmationRequired);
+        }
+        Ok(Some(state))
+    }
+}
+impl Repository for LocalRegistration {
+    fn load_binding(
+        &self,
+        id: BindingId,
+    ) -> std::result::Result<Option<BindingSnapshot>, ErrorCode> {
+        self.checked(id).map_err(|e| match e {
+            ManagementError::Storage(Error::StorageBusy) => ErrorCode::Timeout,
+            ManagementError::Storage(_) => ErrorCode::InternalError,
+            _ => ErrorCode::ProjectNotTrusted,
+        })
+    }
+}

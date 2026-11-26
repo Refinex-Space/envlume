@@ -28,7 +28,7 @@ fn status(row: &Row<'_>, index: usize) -> Decode<Status> {
     }
 }
 
-fn read_snapshot(conn: &Connection, id: BindingId) -> Decode<Option<BindingSnapshot>> {
+pub(super) fn read_snapshot(conn: &Connection, id: BindingId) -> Decode<Option<BindingSnapshot>> {
     use rusqlite::OptionalExtension;
     let sql = "SELECT p.id,p.name,p.description,p.created_at,p.updated_at,p.deleted_at,b.alias,b.canonical_path,b.git_fingerprint,b.profile_id,b.trust_state,b.revoked_at
          FROM workspace_bindings b JOIN projects p ON p.id=b.project_id WHERE b.id=?1";

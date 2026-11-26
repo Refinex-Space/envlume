@@ -2,12 +2,14 @@
 mod paths;
 mod repository;
 mod schema;
+mod workspaces;
 pub use envlume_application::projects::StorageError as Error;
 use envlume_application::projects::{ProjectEntry, ProjectRepository};
 use envlume_domain::ProjectId;
 pub use paths::StorePaths;
 use rusqlite::{Connection, OpenFlags};
 use std::{io, path::Path, time::Duration};
+pub use workspaces::LocalRegistration;
 
 type Result<T> = std::result::Result<T, Error>;
 const WAIT: Duration = Duration::from_secs(5);

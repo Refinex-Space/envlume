@@ -62,6 +62,10 @@ jobs:
           cli="target/$CARGO_BUILD_TARGET/debug/envlume"
           if [[ "$RUNNER_OS" == "Windows" ]]; then cli="$cli.exe"; fi
           cargo run --locked -p envlume-desktop --example shared_catalogue --features tauri/custom-protocol -- "$cli"
+      - name: Verify real workspace trust and live revocation with the installed CLI
+        env:
+          T05_NATIVE_CLI: ${{ github.workspace }}/target/${{ matrix.target }}/debug/envlume${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: cargo test --locked -p envlume --test workspace_trust
       - run: pnpm desktop build --debug --no-bundle --target ${{ matrix.target }} -- --locked
       - run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml apps/desktop/src-tauri/Cargo.toml
 

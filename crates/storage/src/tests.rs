@@ -149,7 +149,8 @@ fn newer_or_unrecognized_database_refuses_old_entry_without_modification() {
     let (_dir, paths) = isolated();
     let handle = Store::open(paths.clone()).unwrap();
     let db = connect(&paths.database(), true).unwrap();
-    db.execute_batch("PRAGMA user_version=3").unwrap();
+    db.pragma_update(None, "user_version", schema::CURRENT + 1)
+        .unwrap();
     let wal = paths.database().with_extension("db-wal");
     let image = fs::read(paths.database()).unwrap();
     let journal = fs::read(&wal).unwrap();
@@ -381,7 +382,7 @@ fn killed_migrator_leaves_committed_version_and_retry_succeeds() {
     assert!(worker(&paths, None).wait().unwrap().success());
     assert_eq!(
         schema::version(&connect(&paths.database(), false).unwrap()).unwrap(),
-        2
+        schema::CURRENT
     );
 }
 

@@ -213,6 +213,8 @@ pub enum Actor {
     Desktop,
     Cli,
     Mcp(ClientKind),
+    /// Direct STDIO launch, without an authenticated client integration.
+    LocalStdio,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionStatus {

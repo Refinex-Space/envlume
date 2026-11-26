@@ -1,6 +1,4 @@
 //! harness=false keeps the Rust test runner's own status text out of child stdout.
-#[path = "../src/entry.rs"]
-mod entry;
 #[path = "../../../tests/contracts/fixture_cases.rs"]
 mod fixture_cases;
 
@@ -30,7 +28,7 @@ fn main() -> ExitCode {
     let args: Vec<OsString> = env::args_os().skip(1).collect();
     if args.first().is_some_and(|arg| arg == "mcp") {
         let paths = StorePaths::at(env::current_dir().unwrap().join("state")).unwrap();
-        return entry::run(&args, || Ok(paths.clone()), |id| resolve(paths.clone(), id));
+        return envlume::run(&args, || Ok(paths.clone()), |id| resolve(paths.clone(), id));
     }
     let work = tempfile::tempdir().unwrap();
     let paths = StorePaths::at(work.path().join("state")).unwrap();

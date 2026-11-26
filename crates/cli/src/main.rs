@@ -1,15 +1,8 @@
-mod entry;
-
-use envlume_application::ErrorCode;
 use envlume_storage::StorePaths;
-use std::process::ExitCode;
-
-fn main() -> ExitCode {
-    // T05 supplies the production workspace resolver. Test registrations are
-    // injected by the subprocess test and cannot be enabled by CLI arguments.
-    entry::run(
+fn main() -> std::process::ExitCode {
+    envlume::run(
         &std::env::args_os().skip(1).collect::<Vec<_>>(),
         StorePaths::local,
-        |_| Err(ErrorCode::ProjectNotTrusted),
+        |id| envlume::resolve(StorePaths::local(), id),
     )
 }
