@@ -286,6 +286,21 @@ try {
 	command(["report", "show", "--evidence", result.evidenceId, ...flag], {
 		code: 3,
 	});
+	// Restore the originally approved package before revoking. Reuse the same MCP connection.
+	renameSync(join(root, "package.disabled"), join(root, "package.json"));
+	const lastRun = await call("task_run", { taskId: "node-build" });
+	assert.equal(lastRun.result.exitCode, 0);
+	recordFor(lastRun, "LOCAL_STDIO", "SUCCESS");
+	command(["project", "revoke", ...flag]);
+	const refused = await call("task_run", { taskId: "node-build" });
+	assert.equal(refused.errorCode, "BINDING_REVOKED");
+	assert.equal(refused.evidenceId, undefined);
+	command(["report", "show", "--evidence", lastRun.evidenceId, ...flag], {
+		code: 3,
+	});
+	console.log(
+		"R1: first approval, real Node build, evidence lookup and live MCP revocation passed.",
+	);
 	assert.ok(!stderr.includes(secret));
 	console.log(
 		"T08-A02/A03: CLI/STDIO requests, decisions, timeout, scoped lookup, retention, redacted streams and cleanup passed.",
