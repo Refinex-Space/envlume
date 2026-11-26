@@ -118,8 +118,9 @@ pub fn discover(path: &Path) -> io::Result<Workspace> {
                 .ok_or_else(invalid)?;
             hash.update(&bytes);
             if Path::new(pointer)
-                .components()
-                .any(|p| p.as_os_str() == "worktrees")
+                .parent()
+                .and_then(Path::file_name)
+                .is_some_and(|name| name == "worktrees")
             {
                 "worktree"
             } else {
@@ -182,12 +183,47 @@ mod windows_paths {
             Some(Component::RootDir) => return Err(invalid()),
             _ => (),
         }
-        // Reject alternate data streams and device spellings before probing a path.
-        if path
-            .components()
-            .any(|c| matches!(c,Component::Normal(s) if s.to_string_lossy().contains(':')))
-        {
-            return Err(invalid());
+        // Do not let Win32 reinterpret an apparently ordinary component as
+        // a parent directory, an alternate data stream, or a DOS device.
+        for component in path.components() {
+            if let Component::Normal(name) = component {
+                let name = name.to_str().ok_or_else(invalid)?;
+                let stem = name
+                    .split('.')
+                    .next()
+                    .unwrap_or("")
+                    .trim_end()
+                    .to_ascii_uppercase();
+                let serial = stem
+                    .strip_prefix("COM")
+                    .or_else(|| stem.strip_prefix("LPT"));
+                if name.contains(':')
+                    || name.ends_with([' ', '.'])
+                    || matches!(
+                        stem.as_str(),
+                        "NUL" | "CON" | "PRN" | "AUX" | "CONIN$" | "CONOUT$"
+                    )
+                    || serial.is_some_and(|n| {
+                        matches!(
+                            n,
+                            "0" | "1"
+                                | "2"
+                                | "3"
+                                | "4"
+                                | "5"
+                                | "6"
+                                | "7"
+                                | "8"
+                                | "9"
+                                | "¹"
+                                | "²"
+                                | "³"
+                        )
+                    })
+                {
+                    return Err(invalid());
+                }
+            }
         }
         Ok(())
     }

@@ -4,7 +4,7 @@ A local-first environment gateway for AI coding agents.
 
 Envlume 面向同时维护多个项目的开发者。每个工作区可以分别指定本机工具链、可访问的环境资源，以及允许 AI 执行的构建和测试任务。目标是让 AI 知道当前项目该用哪个 JDK、能查哪个数据库，并让开发者拿到可以复核的执行结果。
 
-**当前可从源码启动桌面 Shell，并通过桌面命令和独立 CLI 读取本地 SQLite 项目目录。** 独立 MCP STDIO 骨架可在隔离夹具中验证 `project_context`；真实工作区绑定、资源访问和安装包按任务卡逐步交付。[查看交付进度](docs/plan/PLAN.md)
+**当前可从源码启动桌面 Shell，并通过桌面命令和独立 CLI 读取本地 SQLite 项目目录。** CLI 可导入本地工作区、确认和撤销信任；独立 MCP 进程返回该绑定当前获准的项目摘要。[查看交付进度](docs/plan/PLAN.md)
 
 ## v0.1 的使用场景
 
@@ -56,9 +56,24 @@ pnpm desktop dev
 
 CLI 应输出 `envlume 0.1.0-dev.1`。桌面窗口启动后可展开“查看命令行版本”。开发服务器仅监听 `http://127.0.0.1:1420`。按 Ctrl+C 结束开发会话，只预览 Web 界面可用 `pnpm dev`。
 
-### 验证独立 MCP 进程
+### 注册工作区并验证 MCP
 
-从仓库根目录运行 `cargo test --locked -p envlume --test stdio`，测试会建立临时注册表并启动 CLI 子进程，验证协议协商、工具发现、模拟项目摘要和关闭行为。常规入口为 `envlume mcp --binding <UUID>`，生产绑定解析在 T05 接入，当前默认拒绝访问。[测试与协议实录](tests/contracts/stdio/README.md)
+从本地终端运行以下命令，把尖括号占位符替换为实际路径或上一步返回的 UUID。
+
+```sh
+envlume project add <path> --json
+envlume project list --json
+envlume project inspect --path <path> --json
+envlume project add <worktree-path> --project <project-id> --json
+envlume project revoke --binding <binding-id>
+envlume project delete --project <project-id>
+```
+
+首次导入先显示所选路径、真实目录、Git 类型、构建文件提示和申请的权限。在终端输入 `trust` 确认后只授予 `project.inspect`。每次导入默认新建逻辑项目；可通过 `--project` 把另一个工作目录归入已有项目。每个目录独立确认和授权。软删除项目需输入 `delete`，其全部绑定和 grant 随事务撤销。
+
+将 MCP 客户端的启动目录设为已确认的工作区根目录，启动命令为 `envlume mcp --binding <binding-id>`。服务从当前用户的本地注册表读取确认来源，并在每次发现和调用时核验目录身份及授权。工作目录被移动、替换或所选链接改指后，旧绑定进入 `STALE`。重新确认会分配新 ID。Windows 支持本地磁盘的 junction，拒绝 UNC、映射网络盘和设备路径。
+
+运行 `cargo test --locked -p envlume --test workspace_trust` 可在临时目录复跑真实注册、终端确认和运行中撤权。`cargo test --locked -p envlume --test stdio` 保留 Phase 0 的模拟协议回归。[T05 任务及验收](docs/plan/tasks/T05-workspace-trust.md) · [STDIO 契约实录](tests/contracts/stdio/README.md)
 
 ### 构建与验证
 

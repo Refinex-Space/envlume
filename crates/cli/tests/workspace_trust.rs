@@ -39,12 +39,26 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
         }
     });
     let mut output = Vec::new();
+    let mut answered_through = 0;
     while !output
-        .windows(b"to confirm: ".len())
-        .any(|w| w == b"to confirm: ")
+        .windows(b"to confirm:".len())
+        .any(|w| w == b"to confirm:")
     {
         match rx.recv_timeout(Duration::from_secs(20)) {
-            Ok(bytes) => output.extend(bytes),
+            Ok(bytes) => {
+                output.extend(bytes);
+                // ConPTY inherits the terminal cursor. Like a physical terminal,
+                // answer each cursor-position query before waiting for the prompt.
+                let query = b"\x1b[6n";
+                while let Some(pos) = output[answered_through..]
+                    .windows(query.len())
+                    .position(|b| b == query)
+                {
+                    input.write_all(b"\x1b[1;1R").unwrap();
+                    input.flush().unwrap();
+                    answered_through += pos + query.len();
+                }
+            }
             Err(e) => {
                 let _ = child.kill();
                 panic!(

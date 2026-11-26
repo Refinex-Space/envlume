@@ -12,7 +12,7 @@ cargo test --locked -p envlume --test stdio
 
 | 程序 | 注册来源、用例及预期行为 |
 |---|---|
-| 常规 `envlume mcp --binding <UUID>` | T04 的生产 resolver 默认拒绝绑定。合法格式但未经解析的 UUID 在握手时返回 `PROJECT_NOT_TRUSTED`，退出码为 3。真实工作区注册与解析由 T05 接入。 |
+| 常规 `envlume mcp --binding <UUID>` | T05 从当前用户的注册表解析真实绑定并核对启动目录。此 T04 回归仍使用未知 UUID 验证结构化拒绝；真实绑定的成功及撤销路径由 `workspace_trust` 子进程测试覆盖。 |
 | 测试 CLI 子进程 | 编译同一 CLI 参数入口和同一 rmcp 服务，注入临时 SQLite 仓储及 T02 的 application 替身。它核对测试绑定，发现并调用 `project_context`。测试 client 身份由本地夹具预置。 |
 
 测试客户端会分别调用两个程序，检查未知绑定在两个版本的握手中均收到结构化拒绝。常规 CLI 的运行参数、工作目录或客户端 metadata 均不能启用替身。

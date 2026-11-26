@@ -8,7 +8,6 @@ import {
   unlinkSync,
   rmSync,
   existsSync,
-  realpathSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -37,6 +36,22 @@ function run(program, args, cwd = root, code = 0, input) {
     }),
   );
   return r.stdout;
+}
+if (windows) {
+  const fs = run("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    "[IO.DriveInfo]::new([IO.Path]::GetPathRoot([Environment]::CurrentDirectory)).DriveFormat",
+  ]).trim();
+  console.log("Native test volume:", fs);
+} else if (process.platform === "darwin") {
+  const device = run("df", ["-P", root]).trim().split("\n")[1].split(/\s+/)[0];
+  const info = run("diskutil", ["info", device]);
+  console.log(
+    "Native test volume:",
+    /File System Personality:\s*(.+)/.exec(info)[1].trim(),
+  );
 }
 const cli = (...args) => JSON.parse(run(exe, [...args, "--json"]));
 const confirm = (...args) => run(helper, ["approve", exe, ...args, "--json"]);
@@ -94,6 +109,18 @@ assert.equal(worktree.workspace.gitKind, "worktree");
 assert.equal(worktree.binding.projectId, a.projectId);
 assert.notEqual(worktree.binding.bindingId, a.bindingId);
 assert.equal(add(primary).binding.bindingId, a.bindingId);
+console.log(
+  "CLI registration:",
+  JSON.stringify({
+    state: a.state,
+    source: a.confirmationSource,
+    git: first.workspace.gitKind,
+    hints: first.workspace.hints,
+    sameRemoteIndependent: true,
+    linkedProjectShared: true,
+  }),
+);
+
 assert.ok(cli("project", "list").projects.some((p) => p.id === a.projectId));
 const init = {
   protocolVersion: "2025-11-25",
@@ -225,6 +252,9 @@ assert.notEqual(rebound.bindingId, linked.bindingId);
 unlink(alias);
 link(alias, physical);
 await refused(physical, linked.bindingId, "PROJECT_NOT_TRUSTED");
+console.log(
+  "STDIO evidence: project.inspect only; mismatched origin and unknown ID denied; live revoke -> BINDING_REVOKED; live delete denied; retarget -> STALE; new registration has a distinct ID.",
+);
 const moved = join(root, "moved");
 renameSync(clone, moved);
 assert.equal(cli("project", "inspect", "--path", clone).binding.state, "STALE");

@@ -138,3 +138,63 @@ fn unverified_legacy_rows_and_untrusted_marker_files_cannot_grant_access() {
         "STALE"
     );
 }
+
+#[test]
+fn real_context_filters_the_current_grants_and_private_resource_metadata() {
+    use envlume_application::Session;
+    use envlume_domain::Actor;
+    use serde_json::json;
+    let (_tmp, paths, store, path) = fixture();
+    let bound = add_project(&store, &path, None, |_, _| true).unwrap();
+    let db = Connection::open(paths.database()).unwrap();
+    db.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+    for (index, alias, kind, status) in [
+        (1, "dev", "DEV", "ACTIVE"),
+        (2, "test", "TEST", "ACTIVE"),
+        (3, "live", "PROD", "ACTIVE"),
+        (4, "off", "DEV", "DISABLED"),
+    ] {
+        let target: [u8; 16] = [index; 16];
+        let resource = [index + 10; 16];
+        db.execute(
+            "INSERT INTO environment_targets VALUES(?1,?2,?3,?4,'MEDIUM',0,?5)",
+            rusqlite::params![target, bound.project_id.0, alias, kind, status],
+        )
+        .unwrap();
+        db.execute("INSERT INTO resource_bindings VALUES(?1,?2,'primary-db','MYSQL','internal.invalid',3306,
+            'VERIFY_IDENTITY','private-credential-ref','[]','ACTIVE')",rusqlite::params![resource,target]).unwrap();
+        if alias != "test" {
+            db.execute("INSERT INTO capability_grants(id,project_id,binding_id,target_id,resource_id,capability)
+                VALUES(randomblob(16),?1,?2,?3,?4,'database.schema')",
+                rusqlite::params![bound.project_id.0,bound.binding_id.0,target,resource]).unwrap();
+        }
+    }
+    let session = Session::from_registration(
+        LocalRegistration {
+            store,
+            origin: path,
+        },
+        bound.binding_id,
+        Actor::LocalStdio,
+    )
+    .unwrap();
+    let report = serde_json::to_value(session.project_context(json!({}))).unwrap();
+    assert_eq!(report["result"]["targets"], json!(["dev"]));
+    assert_eq!(
+        report["result"]["capabilities"],
+        json!([
+            "database.schema:0b0b0b0b-0b0b-0b0b-0b0b-0b0b0b0b0b0b",
+            "project.inspect"
+        ])
+    );
+    assert!(!report.to_string().contains("internal.invalid"));
+    assert!(!report.to_string().contains("private-credential-ref"));
+    db.execute(
+        "UPDATE capability_grants SET expires_at=0 WHERE capability='database.schema'",
+        [],
+    )
+    .unwrap();
+    let after = serde_json::to_value(session.project_context(json!({}))).unwrap();
+    assert_eq!(after["result"]["targets"], json!([]));
+    assert_eq!(after["result"]["capabilities"], json!(["project.inspect"]));
+}

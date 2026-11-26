@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params};
 use std::path::{Path, PathBuf};
 
 type Result<T> = std::result::Result<T, ManagementError>;
-const INFO:&str="SELECT b.id,b.project_id,p.name,b.alias,coalesce(b.entry_path,b.canonical_path),
+const INFO: &str = "SELECT b.id,b.project_id,p.name,b.alias,coalesce(b.entry_path,b.canonical_path),
     b.canonical_path,b.trust_state,b.confirmation_source,b.confirmed_at_ms,b.git_fingerprint,b.root_identity
     FROM workspace_bindings b JOIN projects p ON p.id=b.project_id";
 
@@ -36,10 +36,21 @@ fn by_id(conn: &Connection, id: BindingId) -> Result<BindingInfo> {
         .ok_or(ManagementError::NotFound)
 }
 fn by_path(conn: &Connection, entry: &Path, ws: Option<&Workspace>) -> Result<Option<BindingInfo>> {
-    conn.query_row(&format!("{INFO} WHERE b.entry_path=?1 OR b.canonical_path=?1 OR b.canonical_path=?2 OR b.root_identity=?3
-        ORDER BY (b.trust_state='TRUSTED') DESC,(b.entry_path=?1) DESC,b.created_at DESC,b.rowid DESC LIMIT 1"),
-        params![entry.to_str(),ws.and_then(|w|w.canonical_path.to_str()),ws.map(|w|&w.root_identity)],info)
-        .optional().map_err(database_error).map_err(Into::into)
+    let sql = format!(
+        "{INFO} WHERE b.entry_path=?1 OR b.canonical_path=?1
+        OR b.canonical_path=?2 OR b.root_identity=?3
+        ORDER BY (b.trust_state IN ('TRUSTED','UNTRUSTED')) DESC,
+        (b.entry_path=?1) DESC,b.created_at DESC,b.rowid DESC LIMIT 1"
+    );
+    let parameters = params![
+        entry.to_str(),
+        ws.and_then(|w| w.canonical_path.to_str()),
+        ws.map(|w| &w.root_identity)
+    ];
+    Ok(conn
+        .query_row(&sql, parameters, info)
+        .optional()
+        .map_err(database_error)?)
 }
 fn still_valid(binding: &BindingInfo) -> bool {
     discover(&binding.entry_path).is_ok_and(|w| binding.matches(&w))
@@ -54,8 +65,10 @@ fn revoke_grants(conn: &Connection, id: BindingId) -> Result<()> {
     Ok(())
 }
 fn stale(conn: &Connection, id: BindingId) -> Result<()> {
-    if conn.execute("UPDATE workspace_bindings SET trust_state='STALE' WHERE id=?1 AND trust_state IN ('TRUSTED','UNTRUSTED')",[id.0]).map_err(database_error)?!=0 {
-        revoke_grants(conn,id)?;
+    let sql = "UPDATE workspace_bindings SET trust_state='STALE'
+        WHERE id=?1 AND trust_state IN ('TRUSTED','UNTRUSTED')";
+    if conn.execute(sql, [id.0]).map_err(database_error)? != 0 {
+        revoke_grants(conn, id)?;
     }
     Ok(())
 }
@@ -80,39 +93,87 @@ impl WorkspaceRepository for Store {
         ws: &Workspace,
         project: Option<ProjectId>,
     ) -> Result<BindingInfo> {
-        self.workspace_write(|tx|{
-            if discover(&ws.entry_path).as_ref().ok()!=Some(ws){return Err(ManagementError::WorkspaceChanged);}
+        self.workspace_write(|tx| {
+            let observed =
+                discover(&ws.entry_path).map_err(|_| ManagementError::WorkspaceChanged)?;
+            if &observed != ws {
+                return Err(ManagementError::WorkspaceChanged);
+            }
             // A retargeted alias and its new destination can match two separate rows.
-            while let Some(old)=by_path(tx,&ws.entry_path,Some(ws))? {
-                if old.state!="TRUSTED" && old.state!="UNTRUSTED"{break;}
-                if old.state=="TRUSTED" && still_valid(&old) && old.matches(ws) {
-                    if project.is_some_and(|p|p!=old.project_id){return Err(ManagementError::ProjectMismatch);}
+            while let Some(old) = by_path(tx, &ws.entry_path, Some(ws))? {
+                if old.state != "TRUSTED" && old.state != "UNTRUSTED" {
+                    break;
+                }
+                if old.state == "TRUSTED" && still_valid(&old) && old.matches(ws) {
+                    if project.is_some_and(|id| id != old.project_id) {
+                        return Err(ManagementError::ProjectMismatch);
+                    }
                     return Ok(old);
                 }
-                stale(tx,old.binding_id)?;
+                stale(tx, old.binding_id)?;
             }
-            let id=BindingId::generate();
-            let timestamp=envlume_domain::UtcDateTime::now().unix_timestamp_nanos()/1_000_000;
-            let now=i64::try_from(timestamp).map_err(|_|Error::StorageUnavailable)?;
-            let name=ws.canonical_path.file_name().and_then(|n|n.to_str()).ok_or(ManagementError::InvalidPath)?;
-            if name.chars().any(char::is_control) || name.trim().is_empty() || name.chars().count()>128{return Err(ManagementError::InvalidPath);}
-            let project_id=if let Some(p)=project{
-                if !tx.prepare("SELECT 1 FROM projects WHERE id=?1 AND deleted_at IS NULL").map_err(database_error)?.exists([p.0]).map_err(database_error)?{
+            let id = BindingId::generate();
+            let timestamp = envlume_domain::UtcDateTime::now().unix_timestamp_nanos() / 1_000_000;
+            let now = i64::try_from(timestamp).map_err(|_| Error::StorageUnavailable)?;
+            let name = ws
+                .canonical_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or(ManagementError::InvalidPath)?;
+            if name.chars().any(char::is_control)
+                || name.trim().is_empty()
+                || name.chars().count() > 128
+            {
+                return Err(ManagementError::InvalidPath);
+            }
+            let project_id = if let Some(selected) = project {
+                let sql = "SELECT 1 FROM projects WHERE id=?1 AND deleted_at IS NULL";
+                if !tx
+                    .prepare(sql)
+                    .map_err(database_error)?
+                    .exists([selected.0])
+                    .map_err(database_error)?
+                {
                     return Err(ManagementError::NotFound);
                 }
-                p
-            }else{
-                let p=ProjectId::generate();
-                tx.execute("INSERT INTO projects(id,name,created_at,updated_at) VALUES(?1,?2,?3,?3)",params![p.0,name,now]).map_err(database_error)?;
-                p
+                selected
+            } else {
+                let new_id = ProjectId::generate();
+                let sql = "INSERT INTO projects(id,name,created_at,updated_at) VALUES(?1,?2,?3,?3)";
+                tx.execute(sql, params![new_id.0, name, now])
+                    .map_err(database_error)?;
+                new_id
             };
-            let slug:String=name.chars().filter(|c|c.is_ascii_alphanumeric() || *c=='-').take(24).map(|c|c.to_ascii_lowercase()).collect();
-            let alias=format!("ws-{slug}-{}",id.0.simple());
-            tx.execute("INSERT INTO workspace_bindings(id,project_id,alias,canonical_path,git_fingerprint,trust_state,created_at,entry_path,root_identity,confirmation_source,confirmed_at_ms)
-                VALUES(?1,?2,?3,?4,?5,'TRUSTED',?6,?7,?8,'LOCAL_CLI_TTY',?6)",params![id.0,project_id.0,alias,ws.canonical_path.to_str(),ws.fingerprint,now,ws.entry_path.to_str(),ws.root_identity]).map_err(database_error)?;
-            tx.execute("INSERT INTO capability_grants(id,project_id,binding_id,capability) VALUES(?1,?2,?3,'project.inspect')",
-                params![GrantId::generate().0,project_id.0,id.0]).map_err(database_error)?;
-            by_id(tx,id)
+            let slug: String = name
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .take(24)
+                .map(|c| c.to_ascii_lowercase())
+                .collect();
+            let alias = format!("ws-{slug}-{}", id.0.simple());
+            let insert = "INSERT INTO workspace_bindings(
+                id, project_id, alias, canonical_path, git_fingerprint, trust_state, created_at,
+                entry_path, root_identity, confirmation_source, confirmed_at_ms)
+                VALUES(?1,?2,?3,?4,?5,'TRUSTED',?6,?7,?8,'LOCAL_CLI_TTY',?6)";
+            tx.execute(
+                insert,
+                params![
+                    id.0,
+                    project_id.0,
+                    alias,
+                    ws.canonical_path.to_str(),
+                    ws.fingerprint,
+                    now,
+                    ws.entry_path.to_str(),
+                    ws.root_identity
+                ],
+            )
+            .map_err(database_error)?;
+            let grant = "INSERT INTO capability_grants(id,project_id,binding_id,capability)
+                VALUES(?1,?2,?3,'project.inspect')";
+            tx.execute(grant, params![GrantId::generate().0, project_id.0, id.0])
+                .map_err(database_error)?;
+            by_id(tx, id)
         })
     }
     fn inspect_binding(&self, entry: &Path, ws: Option<&Workspace>) -> Result<BindingInfo> {
@@ -126,18 +187,30 @@ impl WorkspaceRepository for Store {
         })
     }
     fn revoke(&self, id: BindingId) -> Result<()> {
-        self.workspace_write(|tx|{
+        self.workspace_write(|tx| {
             by_id(tx,id)?;
-            tx.execute("UPDATE workspace_bindings SET trust_state='REVOKED',revoked_at=coalesce(revoked_at,CAST(unixepoch('subsec')*1000 AS INTEGER)) WHERE id=?1",[id.0]).map_err(database_error)?;
+            let sql="UPDATE workspace_bindings SET trust_state='REVOKED',
+                revoked_at=coalesce(revoked_at, max(created_at,CAST(unixepoch('subsec')*1000 AS INTEGER)))
+                WHERE id=?1";
+            tx.execute(sql,[id.0]).map_err(database_error)?;
             revoke_grants(tx,id)
         })
     }
     fn delete_project(&self, id: ProjectId) -> Result<()> {
-        self.workspace_write(|tx|{
-            let now="CAST(unixepoch('subsec')*1000 AS INTEGER)";
-            if tx.execute(&format!("UPDATE projects SET updated_at=CASE WHEN deleted_at IS NULL THEN {now} ELSE updated_at END,deleted_at=coalesce(deleted_at,{now}) WHERE id=?1"),[id.0]).map_err(database_error)?==0{return Err(ManagementError::NotFound);}
-            tx.execute(&format!("UPDATE workspace_bindings SET trust_state='REVOKED',revoked_at=coalesce(revoked_at,{now}) WHERE project_id=?1"),[id.0]).map_err(database_error)?;
-            tx.execute(&format!("UPDATE capability_grants SET revoked_at={now} WHERE project_id=?1 AND revoked_at IS NULL"),[id.0]).map_err(database_error)?;
+        self.workspace_write(|tx| {
+            let now=envlume_domain::UtcDateTime::now().unix_timestamp_nanos()/1_000_000;
+            let now=i64::try_from(now).map_err(|_|Error::StorageUnavailable)?;
+            let delete="UPDATE projects SET
+                updated_at=CASE WHEN deleted_at IS NULL THEN max(updated_at,?2) ELSE updated_at END,
+                deleted_at=coalesce(deleted_at,max(updated_at,?2)) WHERE id=?1";
+            if tx.execute(delete,params![id.0,now]).map_err(database_error)?==0 {
+                return Err(ManagementError::NotFound);
+            }
+            let revoke="UPDATE workspace_bindings SET trust_state='REVOKED',
+                revoked_at=coalesce(revoked_at,max(created_at,?2)) WHERE project_id=?1";
+            tx.execute(revoke,params![id.0,now]).map_err(database_error)?;
+            let grants="UPDATE capability_grants SET revoked_at=?2 WHERE project_id=?1 AND revoked_at IS NULL";
+            tx.execute(grants,params![id.0,now]).map_err(database_error)?;
             Ok(())
         })
     }
