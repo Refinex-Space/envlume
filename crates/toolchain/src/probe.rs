@@ -42,6 +42,20 @@ fn capture(pipe: impl Read + Send + 'static) -> mpsc::Receiver<Option<Vec<u8>>> 
     });
     rx
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProbeFailure {
+    Unavailable,
+    TimedOut,
+}
+
+fn captured(rx: mpsc::Receiver<Option<Vec<u8>>>, end: Instant) -> Result<Vec<u8>, ProbeFailure> {
+    rx.recv_timeout(end.saturating_duration_since(Instant::now()))
+        .map_err(|error| match error {
+            mpsc::RecvTimeoutError::Timeout => ProbeFailure::TimedOut,
+            mpsc::RecvTimeoutError::Disconnected => ProbeFailure::Unavailable,
+        })?
+        .ok_or(ProbeFailure::Unavailable)
+}
 /// Fixed native version commands only. No project cwd, shell, inherited flags,
 /// credentials, init files, installer shims or unbounded diagnostic output.
 pub(crate) fn installed_version(
@@ -49,8 +63,12 @@ pub(crate) fn installed_version(
     tool: &str,
     cwd: &Path,
     deadline: Instant,
-) -> Option<String> {
-    let name = path.file_stem()?.to_str()?.to_ascii_lowercase();
+) -> Result<String, ProbeFailure> {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or(ProbeFailure::Unavailable)?
+        .to_ascii_lowercase();
     let expected = match tool {
         "jdk" => "java",
         "python" => "python",
@@ -62,20 +80,20 @@ pub(crate) fn installed_version(
                 !s.is_empty() && s.chars().all(|c| c.is_ascii_digit() || c == '.')
             })))
     {
-        return None;
+        return Err(ProbeFailure::Unavailable);
     }
     if !native(path)
         || path
             .components()
             .any(|c| matches!(c.as_os_str().to_str(), Some("shims" | "WindowsApps")))
     {
-        return None;
+        return Err(ProbeFailure::Unavailable);
     }
     #[cfg(target_os = "macos")]
     if path.parent() == Some(Path::new("/usr/bin"))
         && matches!(tool, "jdk" | "javac" | "git" | "python" | "rustc" | "cargo")
     {
-        return None;
+        return Err(ProbeFailure::Unavailable);
     }
     if matches!(tool, "rustc" | "cargo")
         && path.parent().and_then(Path::parent).is_some_and(|p| {
@@ -88,13 +106,13 @@ pub(crate) fn installed_version(
                 .is_file()
         })
     {
-        return None;
+        return Err(ProbeFailure::Unavailable);
     }
     let args: &[&str] = match tool {
         "jdk" | "javac" => &["-version"],
         "python" => &["-I", "-S", "--version"],
         "git" | "node" | "uv" | "cargo" | "rustc" => &["--version"],
-        _ => return None,
+        _ => return Err(ProbeFailure::Unavailable),
     };
     let mut cmd = Command::new(path);
     cmd.args(args)
@@ -112,39 +130,39 @@ pub(crate) fn installed_version(
             cmd.env("SystemRoot", w);
         }
     }
-    let end = deadline.min(Instant::now() + Duration::from_secs(2));
+    let end = deadline;
     if Instant::now() >= end {
-        return None;
+        return Err(ProbeFailure::TimedOut);
     }
-    let mut child = cmd.spawn().ok()?;
-    let stdout = capture(child.stdout.take()?);
-    let stderr = capture(child.stderr.take()?);
+    let mut child = cmd.spawn().map_err(|_| ProbeFailure::Unavailable)?;
+    let stdout = capture(child.stdout.take().ok_or(ProbeFailure::Unavailable)?);
+    let stderr = capture(child.stderr.take().ok_or(ProbeFailure::Unavailable)?);
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
                 if !status.success() {
-                    return None;
+                    return Err(ProbeFailure::Unavailable);
                 }
                 break;
             }
             Ok(None) if Instant::now() < end => thread::sleep(Duration::from_millis(5)),
-            _ => {
+            outcome => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return None;
+                return Err(if outcome.is_ok() {
+                    ProbeFailure::TimedOut
+                } else {
+                    ProbeFailure::Unavailable
+                });
             }
         }
     }
-    let mut data = stdout
-        .recv_timeout(end.saturating_duration_since(Instant::now()))
-        .ok()??;
+    let mut data = captured(stdout, end)?;
     data.push(b'\n');
-    data.extend(
-        stderr
-            .recv_timeout(end.saturating_duration_since(Instant::now()))
-            .ok()??,
-    );
-    let text = std::str::from_utf8(&data).ok()?;
+    data.extend(captured(stderr, end)?);
+    // Localized stderr may have a different encoding. Only a validated ASCII
+    // version token is retained from either stream.
+    let text = String::from_utf8_lossy(&data);
     for line in text.lines().map(str::trim) {
         let token = match tool {
             "jdk" => line
@@ -162,14 +180,14 @@ pub(crate) fn installed_version(
         };
         if let Some(raw) = token.and_then(|s| s.split_ascii_whitespace().next()) {
             let v = if tool == "git" {
-                raw.split(".windows.").next()?
+                raw.split_once(".windows.").map_or(raw, |(v, _)| v)
             } else {
                 raw
             };
             if let Some(ver) = version(v) {
-                return Some(ver.to_owned());
+                return Ok(ver.to_owned());
             }
         }
     }
-    None
+    Err(ProbeFailure::Unavailable)
 }

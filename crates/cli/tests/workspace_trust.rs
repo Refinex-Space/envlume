@@ -104,6 +104,9 @@ fn main() -> ExitCode {
         Some("java" | "javac")
     ) {
         assert_eq!(args, ["-version"]);
+        if invoked.with_extension("fixture-delay").exists() {
+            thread::sleep(Duration::from_millis(2400));
+        }
         assert!(env::var_os("T06_TEST_PASSWORD").is_none());
         assert!(env::var_os("JAVA_TOOL_OPTIONS").is_none());
         assert!(!Path::new("pom.xml").exists());

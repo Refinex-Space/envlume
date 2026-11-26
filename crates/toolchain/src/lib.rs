@@ -181,6 +181,7 @@ struct Found {
     details: Vec<String>,
     home: Option<PathBuf>,
     broken: Option<&'static str>,
+    timed_out: bool,
 }
 fn package_version(
     host: &Host,
@@ -244,6 +245,7 @@ fn inspect(
         details: Vec::new(),
         home: None,
         broken: None,
+        timed_out: false,
     };
     match tool {
         "jdk" => {
@@ -266,18 +268,32 @@ fn inspect(
             if declared.is_some_and(|v| !matches(tool, v, requirement)) {
                 return Some(f);
             }
-            let java = probe::installed_version(&exe, tool, cwd, deadline);
-            let compiler = host
+            // Verify both binaries against one total deadline. In particular a
+            // cold javac may take longer to start than java on a Windows host.
+            let compiler_path = host
                 .permitted(&javac, workspace)
-                .filter(|p| p.starts_with(home))
-                .and_then(|p| probe::installed_version(&p, "javac", cwd, deadline));
+                .filter(|p| p.starts_with(home));
+            let (java, compiler) = std::thread::scope(|scope| {
+                let j = scope.spawn(|| probe::installed_version(&exe, tool, cwd, deadline));
+                let c = compiler_path
+                    .ok_or(probe::ProbeFailure::Unavailable)
+                    .and_then(|p| probe::installed_version(&p, "javac", cwd, deadline));
+                (j.join().expect("java version worker"), c)
+            });
+            f.timed_out = java == Err(probe::ProbeFailure::TimedOut)
+                || compiler == Err(probe::ProbeFailure::TimedOut);
+            let (java, compiler) = (java.ok(), compiler.ok());
             if let Some(v) = &java {
                 f.details.push(format!("java {v}"));
             }
             if let Some(v) = &compiler {
                 f.details.push(format!("javac {v}"));
             }
-            if java.is_none() || compiler.is_none() {
+            if f.timed_out {
+                f.broken = Some(
+                    "Version probe timed out. Retry the selected JDK after its startup completes.",
+                );
+            } else if java.is_none() || compiler.is_none() {
                 f.broken =
                     Some("Select a complete installed JDK with working bin/java and bin/javac.");
             } else if java != compiler || declared.is_some_and(|v| Some(v) != java.as_deref()) {
@@ -320,7 +336,14 @@ fn inspect(
             f.version = package_version(host, workspace, &exe, launcher, tool)
         }
         "docker" | "mise" => (), // presence only, including Docker with its daemon stopped
-        _ => f.version = probe::installed_version(&exe, tool, cwd, deadline),
+        _ => match probe::installed_version(&exe, tool, cwd, deadline) {
+            Ok(v) => f.version = Some(v),
+            Err(probe::ProbeFailure::TimedOut) => {
+                f.timed_out = true;
+                f.broken = Some("Local version probe timed out. Retry the selected installation.");
+            }
+            Err(probe::ProbeFailure::Unavailable) => (),
+        },
     }
     Some(f)
 }
@@ -589,7 +612,9 @@ impl Host {
                 };
                 let repair = f.broken.unwrap_or(fallback);
                 item.problem(
-                    if item.version.is_some() {
+                    if f.timed_out {
+                        "timeout"
+                    } else if item.version.is_some() {
                         "conflict"
                     } else {
                         "unverified"
@@ -641,8 +666,12 @@ impl Host {
     ) -> Result<Inventory, ErrorCode> {
         let cwd = tempfile::tempdir().map_err(|_| ErrorCode::InternalError)?;
         let hints = workspace.map(Hints::load).unwrap_or_default();
-        let tools = std::thread::scope(|scope| {
-            let jobs: Vec<_> = TOOLS
+        // Resolve the JDK before competing with other host probes; build tools
+        // consume this selection and its two native binaries share one budget.
+        let jdk = self.resolve_tool("jdk", workspace, rules, &hints, cwd.path());
+        let mut tools = vec![jdk];
+        let other = std::thread::scope(|scope| {
+            let jobs: Vec<_> = TOOLS[1..]
                 .iter()
                 .map(|tool| {
                     scope.spawn(|| self.resolve_tool(tool, workspace, rules, &hints, cwd.path()))
@@ -652,7 +681,7 @@ impl Host {
                 .map(|job| job.join().map_err(|_| ErrorCode::InternalError))
                 .collect::<Result<Vec<_>, _>>()
         })?;
-        let mut tools = tools;
+        tools.extend(other);
         let java = tools[0]
             .java_home
             .as_ref()

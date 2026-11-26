@@ -7,6 +7,7 @@ import {
   mkdirSync,
   writeFileSync,
   renameSync,
+  unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -160,6 +161,11 @@ configure(
   maven,
 );
 configure(second, b, "default", "--tool", "jdk", "17", "--path", modern);
+const coldCompiler = join(old, "bin", "javac.fixture-delay");
+file(coldCompiler, "bounded slow startup");
+const cold = get(doctor(first, a), "jdk");
+assert.equal(cold.repair, null, JSON.stringify(cold));
+unlinkSync(coldCompiler);
 const eight = doctor(first, a),
   seventeen = doctor(second, b);
 assert.equal(get(eight, "jdk").version, "1.8.0_412");
@@ -288,8 +294,8 @@ if (
   const j8 = read(first, realA),
     j17 = read(second, b);
   const j21 = cli(second, "doctor").tools.find((t) => t.tool === "jdk");
-  assert.equal(j8.repair, null);
-  assert.equal(j17.repair, null);
+  assert.equal(j8.repair, null, JSON.stringify(j8));
+  assert.equal(j17.repair, null, JSON.stringify(j17));
   assert.match(j8.version, /^(1\.8\.|8\.)/);
   assert.match(j17.version, /^17\./);
   assert.equal(j21.status, "available");
