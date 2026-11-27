@@ -292,6 +292,10 @@ fn review() {
                 session.refresh_remote(Some(&backend)).unwrap();
                 json!(session.environment_health(json!({}), &|r| backend.health(binding, r)))
             }
+            "regrant" => {
+                fixture.grant("dev", "primary-db", RemoteAction::Connect);
+                json!(true)
+            }
             "revoke" => {
                 fixture.edit(Edit::Revoke {
                     target: alias("dev"),

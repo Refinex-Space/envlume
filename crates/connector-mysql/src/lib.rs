@@ -300,7 +300,7 @@ fn classify(error: Driver) -> Fault {
         Driver::Io(IoError::Tls(_)) | Driver::Driver(DriverError::NoClientSslFlagFromServer) => {
             Fault::Tls
         }
-        Driver::Io(IoError::Io(e)) if e.kind() == std::io::ErrorKind::InvalidData => Fault::Tls,
+        Driver::Io(IoError::Io(e)) if e.kind() == std::io::ErrorKind::InvalidData => Fault::Service,
         Driver::Io(IoError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut => Fault::Timeout,
         Driver::Io(_) => Fault::Tcp,
         Driver::Server(e) if e.code == 1045 => Fault::Authentication,

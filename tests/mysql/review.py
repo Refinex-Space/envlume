@@ -149,7 +149,7 @@ def mysql_fixture(base):
         port = int(
             run(["docker", "port", cid, "3306/tcp"]).decode().strip().split(":")[-1]
         )
-        end = time.monotonic() + seconds0
+        end = time.monotonic() + 120
         while True:
             try:
                 if sql("SELECT @@port") == "3306":
@@ -308,7 +308,21 @@ def review():
             try:
                 send(proc, cfg)
                 setup = recv(proc, 120)
-                assert request("foreign", args())["reads"] == 0
+                receipt = {
+                    "mysql": sql("SELECT VERSION()"),
+                    "tables": {},
+                    "diagnostics": {},
+                }
+                foreign = request("foreign", args())
+                assert (
+                    foreign["reads"] == 0
+                    and foreign["result"]["errorCode"] == "TARGET_NOT_ALLOWED"
+                )
+                receipt["deniedBeforeCredentials"] = [
+                    "foreign",
+                    "unapproved-address",
+                    "dns-failure",
+                ]
                 for r in ["unapproved", "dns-fail"]:
                     reply = request("connection_test", args(resource=r))
                     assert not reply["result"]["ok"] and reply["reads"] == 0
@@ -326,10 +340,27 @@ def review():
                 for _ in range(3):
                     assert request("connection_test", args())["result"]["ok"]
                 assert connections("dev") == ids
+                request("revoke")
+                before = request("health")["reads"]
+                refused = request("connection_test", args())
+                assert (
+                    refused["result"]["errorCode"] == "POLICY_DENIED"
+                    and refused["reads"] == before
+                )
+                wait_for(
+                    lambda: not (connections("dev") & ids),
+                    "retired grant kept its old connection",
+                )
+                request("regrant")
+                assert request("connection_test", args())["result"]["ok"]
+                assert connections("dev").isdisjoint(ids)
+                receipt["connectionReused"] = True
+                receipt["newGrantNewConnection"] = True
                 for name in ["dev", "test"]:
                     r = request("database_schema", args(name))["result"]
                     assert r["ok"], r
                     [table] = r["result"]["tables"]
+                    receipt["tables"][name] = table
                     assert table["table"] == name + "_marker"
                     assert [c["name"] for c in table["columns"]] == ["id", "name"]
                     assert {i["name"]: i["columns"] for i in table["indexes"]} == {
@@ -352,6 +383,9 @@ def review():
                     1 <= len(connections("dev")) <= 3
                     and 1 <= len(connections("test")) <= 2
                 )
+                receipt["parallelConnections"] = {
+                    n: len(connections(n)) for n in ["dev", "test"]
+                }
                 for r, code, reason in [
                     ("bad-cert", "NETWORK_UNREACHABLE", "TLS"),
                     ("wrong-name", "NETWORK_UNREACHABLE", "TLS"),
@@ -366,6 +400,11 @@ def review():
                         and result["errorCode"] == code
                         and reason in result["summary"]
                     ), (r, result)
+                    receipt["diagnostics"][r] = {
+                        "code": code,
+                        "summary": result["summary"],
+                        "durationMs": result["durationMs"],
+                    }
                     assert time.monotonic() - start < 10
                 health = request("health")["result"]["result"]["environments"]
                 statuses = {
@@ -379,28 +418,20 @@ def review():
                     and statuses["bad-login"] == "unavailable"
                 )
                 if helper:
-                    check_cli_mcp(helper, setup)
-                request("revoke")
-                before = request("health")["reads"]
-                refused = request("connection_test", args())
-                assert (
-                    refused["result"]["errorCode"] == "POLICY_DENIED"
-                    and refused["reads"] == before
-                )
-                wait_for(
-                    lambda: not (connections("dev") & ids),
-                    "retired grant kept its old connection",
-                )
-                # No application calls during this interval. Verify actual server sessions and cached health expire.
-                wait_for(
-                    lambda: not connections("dev") and not connections("test"),
-                    "idle connections exceeded TTL",
-                    40,
-                )
-                idle = request("health")["result"]["result"]["environments"]
-                assert all(
-                    r["health"] == "unknown" for e in idle for r in e["resources"]
-                )
+                    receipt["cliAudit"] = check_cli_mcp(helper, setup)
+                assert request("connection_test", args())["result"]["ok"]
+
+                # The heartbeat only reads local state: it cannot open or keep a MySQL session alive.
+                def expired():
+                    if connections("dev") or connections("test"):
+                        return False
+                    idle = request("health")["result"]["result"]["environments"]
+                    return all(
+                        r["health"] == "unknown" for e in idle for r in e["resources"]
+                    )
+
+                wait_for(expired, "idle connections or cached health exceeded TTL", 40)
+                receipt["idleConnections"] = 0
                 assert request("connection_test", args("test"))["result"]["ok"]
                 assert len(connections("test")) == 1
                 request("close")
@@ -408,6 +439,10 @@ def review():
                     lambda: not connections("dev") and not connections("test"),
                     "physical MySQL sessions not closed",
                 )
+                receipt["connectionsAfterClose"] = {
+                    n: len(connections(n)) for n in ["dev", "test"]
+                }
+                print("T11 evidence " + json.dumps(receipt, sort_keys=True), flush=True)
                 print(
                     "T11: MySQL",
                     sql("SELECT VERSION()"),
@@ -437,6 +472,11 @@ def check_cli_mcp(helper, setup):
     checked = cli("connection", "test", "dev", "primary-db")
     audit = cli("report", "show", "--evidence", checked["evidenceId"])
     assert audit["requestId"] == checked["requestId"] and audit["targetAlias"] == "dev"
+    assert (
+        audit["connection"] == checked["result"]
+        and audit["resourceId"]
+        and audit["targetId"]
+    )
     assert (
         cli("database", "schema", "test", "primary-db", "--table", "test_marker")[
             "result"
@@ -499,6 +539,7 @@ def check_cli_mcp(helper, setup):
     finally:
         proc.stdin.close()
         assert proc.wait(timeout=20) == 0
+    return {k: checked[k] for k in ["requestId", "evidenceId", "result"]}
 
 
 if __name__ == "__main__":
