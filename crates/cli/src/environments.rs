@@ -13,9 +13,50 @@ use std::{env, ffi::OsString, process::ExitCode};
 fn alias(s: &str) -> Result<Alias, ErrorCode> {
     s.to_owned().try_into().map_err(|_| ErrorCode::InvalidInput)
 }
+fn file(path: &str, max: u64) -> Result<Vec<u8>, ErrorCode> {
+    use std::io::Read;
+    let m = std::fs::metadata(path).map_err(|_| ErrorCode::InvalidInput)?;
+    if !m.is_file() || m.len() > max {
+        return Err(ErrorCode::InvalidInput);
+    }
+    let mut data = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|f| f.take(max + 1).read_to_end(&mut data))
+        .map_err(|_| ErrorCode::InvalidInput)?;
+    if data.len() as u64 > max {
+        return Err(ErrorCode::InvalidInput);
+    }
+    Ok(data)
+}
 fn parse_edit(args: &[&str]) -> Result<Edit, ErrorCode> {
     let invalid = ErrorCode::InvalidInput;
     Ok(match args {
+        ["mysql-policy", t, r, path, rest @ ..] => {
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Policy {
+                ips: std::collections::BTreeSet<std::net::IpAddr>,
+                tables: TableScope,
+            }
+            let policy: Policy =
+                serde_json::from_slice(&file(path, 65536)?).map_err(|_| invalid)?;
+            let ca_pem = match rest {
+                [] => None,
+                ["--ca", p] => Some(envlume_application::mysql_policy::public_ca(&file(
+                    p, 16384,
+                )?)?),
+                _ => return Err(invalid),
+            };
+            Edit::MySqlPolicy {
+                target: alias(t)?,
+                alias: alias(r)?,
+                route: MySqlRoute {
+                    ips: policy.ips,
+                    ca_pem,
+                },
+                tables: policy.tables,
+            }
+        }
         ["set", name] => Edit::preset(alias(name)?)?,
         ["set", name, kind, risk] => Edit::Target {
             alias: alias(name)?,

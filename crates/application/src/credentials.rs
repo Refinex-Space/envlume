@@ -315,6 +315,7 @@ impl Selection {
             || a.id == b.id
             || a.host != b.host
             || a.port != b.port
+            || a.route != b.route
             || a.tls != b.tls
             || a.kind != b.kind
         {

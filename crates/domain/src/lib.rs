@@ -98,6 +98,13 @@ pub enum TlsMode {
 /// A local OS credential-store reference. Never part of an agent response.
 #[derive(Clone, PartialEq, Eq)]
 pub struct CredentialRef(pub String);
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MySqlRoute {
+    pub ips: std::collections::BTreeSet<std::net::IpAddr>,
+    pub ca_pem: Option<String>,
+}
+pub type TableScope = std::collections::BTreeMap<String, std::collections::BTreeSet<String>>;
 #[derive(Clone, PartialEq, Eq)]
 pub struct ResourceBinding {
     pub id: ResourceId,
@@ -110,6 +117,8 @@ pub struct ResourceBinding {
     pub credential_ref: Option<CredentialRef>,
     pub endpoint_confirmed: bool,
     pub database: Option<String>,
+    pub route: Option<MySqlRoute>,
+    pub tables: TableScope,
     pub policy_labels: Vec<Alias>,
     pub status: Status,
 }

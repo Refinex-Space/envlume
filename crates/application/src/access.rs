@@ -82,16 +82,119 @@ impl<R: Repository> Session<R> {
             .has_grant(Capability::EnvironmentInspect, UtcDateTime::now()))
     }
     pub fn environment_list(&self, arguments: Value) -> Report {
+        self.environment_health(arguments, &|_| Health::Unknown)
+    }
+    pub fn environment_health(
+        &self,
+        arguments: Value,
+        health: &dyn Fn(ResourceId) -> Health,
+    ) -> Report {
         self.dispatch("environment_list", arguments, |_, request| {
             Ok((
                 Payload::Environments {
-                    environments: crate::environments::visible(request.snapshot()),
+                    environments: crate::environments::visible_with_health(
+                        request.snapshot(),
+                        health,
+                    ),
                 },
                 None,
             ))
         })
     }
 
+    pub fn refresh_remote(
+        &self,
+        backend: Option<&dyn crate::remote::DatabaseBackend>,
+    ) -> Result<(bool, bool), ErrorCode> {
+        let state = match self.snapshot() {
+            Ok(s) => s,
+            Err(e) => {
+                if let Some(b) = backend {
+                    b.retain(&|key, _| key.binding != self.binding);
+                }
+                return Err(e);
+            }
+        };
+        let now = UtcDateTime::now();
+        let live = |g: &CapabilityGrant| {
+            let (a, scope) = RemoteAction::from_capability(g.capability)?;
+            if g.binding_id != self.binding
+                || g.revoked_at.is_some()
+                || g.expires_at.is_some_and(|v| v <= now)
+            {
+                return None;
+            }
+            let t = state
+                .targets
+                .iter()
+                .find(|t| t.id == scope.target && t.project_id == self.project)?;
+            let r = state
+                .resources
+                .iter()
+                .find(|r| r.id == scope.resource && a.permits(t, r))?;
+            Some((a, r))
+        };
+        if let Some(backend) = backend {
+            backend.retain(&|key, prior| {
+                key.binding != self.binding
+                    || state
+                        .grants
+                        .iter()
+                        .any(|g| g.id == key.grant && live(g).is_some_and(|(_, r)| r == prior))
+            });
+        }
+        let mut connect = false;
+        let mut schema = false;
+        for (action, resource) in state.grants.iter().filter_map(live) {
+            if resource.route.is_none()
+                || backend.is_some_and(|b| !b.capabilities().contains(&action))
+            {
+                continue;
+            }
+            connect |= action == RemoteAction::Connect;
+            schema |= action == RemoteAction::Schema && !resource.tables.is_empty();
+        }
+        Ok((connect, schema))
+    }
+    pub fn remote_operation(
+        &self,
+        name: &str,
+        args: Value,
+        backend: &dyn crate::remote::DatabaseBackend,
+    ) -> Report {
+        let mut fault = None;
+        let _visibility = self.refresh_remote(Some(backend));
+        let mut report = self.dispatch(name, args, |op, request| {
+            let (endpoint, table, is_test) = match op {
+                Resolved::Connect(r) => (r, None, true),
+                Resolved::Schema(r, t) => (r, t, false),
+                _ => return Err(ErrorCode::InvalidInput.into()),
+            };
+            let r = AuthorizedResource {
+                binding: endpoint.resource,
+                request,
+                reload: &|| self.snapshot(),
+            };
+            let result = if is_test {
+                backend.test(&r).map(Payload::Connection)
+            } else {
+                backend
+                    .schema(&r, table)
+                    .map(|tables| Payload::Schema { tables })
+            };
+            match result {
+                Ok(payload) => Ok((payload, is_test.then(EvidenceId::generate))),
+                Err(e) => {
+                    fault = Some(e);
+                    Err(e.code().into())
+                }
+            }
+        });
+        if let Some(f) = fault {
+            report.summary = f.summary().into();
+        }
+        report
+    }
     pub fn task_list(&self) -> Report {
         self.task_list_with(serde_json::json!({}))
     }
@@ -157,6 +260,7 @@ impl<R: Repository> Session<R> {
             if !state.has_grant(capability, UtcDateTime::now()) {
                 return Err(ErrorCode::PolicyDenied.into());
             }
+            report.resource_scope = RemoteAction::from_capability(capability).map(|(_, s)| s);
             report.target_alias = operation.target().map(|target| target.alias.clone());
             report.capability = Some(capability.wire_name());
             let request = Authorized {

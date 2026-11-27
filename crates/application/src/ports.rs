@@ -49,6 +49,34 @@ pub struct AuthorizedResource<'a> {
     pub(crate) reload: &'a dyn Fn() -> Result<BindingSnapshot, ErrorCode>,
 }
 impl AuthorizedResource<'_> {
+    pub fn pool_identity(
+        &self,
+        action: envlume_policy::RemoteAction,
+    ) -> Result<crate::remote::PoolIdentity, ErrorCode> {
+        let r = self.binding()?;
+        if Some((
+            action,
+            ResourceScope {
+                target: r.target_id,
+                resource: r.id,
+            },
+        )) != envlume_policy::RemoteAction::from_capability(self.request.capability())
+        {
+            return Err(ErrorCode::PolicyDenied);
+        }
+        let g = self
+            .request
+            .snapshot()
+            .live_grant(self.request.capability(), UtcDateTime::now())
+            .ok_or(ErrorCode::PolicyDenied)?;
+        Ok(crate::remote::PoolIdentity {
+            binding: g.binding_id,
+            grant: g.id,
+            target: r.target_id,
+            resource: r.id,
+        })
+    }
+
     /// Call immediately before reading the credential reference or using the endpoint.
     /// A grant replaced while the request was queued is a different approval.
     pub fn binding(&self) -> Result<&ResourceBinding, ErrorCode> {

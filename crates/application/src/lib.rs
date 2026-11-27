@@ -8,6 +8,8 @@ pub use result::ErrorCode;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub mod credentials;
 pub mod environments;
+pub mod mysql_policy;
 pub mod projects;
+pub mod remote;
 pub mod tasks;
 pub mod workspaces;

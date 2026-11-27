@@ -114,6 +114,16 @@ fn persist(
             // Endpoint-change triggers have already retired old grants and detached the reference.
             tx.execute("UPDATE resource_bindings SET confirmed_at_ms=CAST(unixepoch('subsec')*1000 AS INTEGER) WHERE id=?1",[id.0]).map_err(database_error)?;
         }
+        Edit::MySqlPolicy { route, tables, .. } => {
+            let r = approved.resource().ok_or(ManagementError::NotFound)?;
+            let route = serde_json::to_string(route).map_err(|_| Error::InvalidDatabase)?;
+            let tables = serde_json::to_string(tables).map_err(|_| Error::InvalidDatabase)?;
+            tx.execute(
+                "UPDATE resource_bindings SET mysql_route=?2,mysql_tables=?3 WHERE id=?1",
+                params![r.id.0, route, tables],
+            )
+            .map_err(database_error)?;
+        }
         Edit::Grant { action, .. } | Edit::Revoke { action, .. } => {
             let target = target_id()?;
             let resource = approved.resource().ok_or(ManagementError::NotFound)?.id.0;

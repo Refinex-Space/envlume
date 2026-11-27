@@ -85,6 +85,15 @@ jobs:
       - run: pnpm desktop build --debug --no-bundle --target ${{ matrix.target }} -- --locked
       - run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml apps/desktop/src-tauri/Cargo.toml
 
+  mysql:
+    name: Live MySQL 8.4 TLS and metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: python3 -B tests/mysql/review.py
+
   security:
     name: Dependency audit, licenses and secrets
     runs-on: ubuntu-24.04

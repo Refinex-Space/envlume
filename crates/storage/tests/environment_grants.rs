@@ -267,3 +267,74 @@ fn finite_grants_do_not_issue_unlimited_inspection_and_endpoint_components_inval
     edit(&store, id, &root, grant()).unwrap();
     assert!(db.query_row("SELECT expires_at IS NULL FROM capability_grants WHERE capability='environment.inspect' AND revoked_at IS NULL",[],|r|r.get::<_,bool>(0)).unwrap());
 }
+
+#[test]
+fn mysql_table_edits_revoke_grants_and_route_edits_detach_credentials() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    let paths = StorePaths::at(tmp.path().join("state")).unwrap();
+    let store = Store::open(paths.clone()).unwrap();
+    let id = add_project(&store, &root, None, |_, _| true)
+        .unwrap()
+        .binding_id;
+    edit(
+        &store,
+        id,
+        &root,
+        set_target(EnvironmentKind::Dev, RiskLevel::Low),
+    )
+    .unwrap();
+    edit(&store, id, &root, resource("fixture.invalid")).unwrap();
+    let policy = |ip: &str, col: &str| Edit::MySqlPolicy {
+        target: alias("blue"),
+        alias: alias("db"),
+        route: MySqlRoute {
+            ips: [ip.parse().unwrap()].into(),
+            ca_pem: None,
+        },
+        tables: [("orders".into(), [col.into()].into())].into(),
+    };
+    edit(&store, id, &root, policy("127.0.0.1", "id")).unwrap();
+    edit(&store, id, &root, grant()).unwrap();
+    let db = rusqlite::Connection::open(paths.database()).unwrap();
+    db.execute(
+        "UPDATE resource_bindings SET credential_ref='fixture-ref'",
+        [],
+    )
+    .unwrap();
+    let live = || {
+        db.query_row("SELECT count(*) FROM capability_grants WHERE resource_id IS NOT NULL AND revoked_at IS NULL",[],|r|r.get::<_,i64>(0)).unwrap()
+    };
+    edit(&store, id, &root, policy("127.0.0.1", "id")).unwrap();
+    assert_eq!(live(), 1);
+    edit(&store, id, &root, policy("127.0.0.1", "name")).unwrap();
+    assert_eq!(live(), 0);
+    assert_eq!(
+        db.query_row("SELECT credential_ref FROM resource_bindings", [], |r| {
+            r.get::<_, String>(0)
+        })
+        .unwrap(),
+        "fixture-ref"
+    );
+    edit(&store, id, &root, grant()).unwrap();
+    edit(&store, id, &root, policy("127.0.0.2", "name")).unwrap();
+    assert_eq!(live(), 0);
+    assert!(
+        db.query_row(
+            "SELECT credential_ref IS NULL FROM resource_bindings",
+            [],
+            |r| r.get::<_, bool>(0)
+        )
+        .unwrap()
+    );
+    edit(&store, id, &root, resource("other.invalid")).unwrap();
+    assert!(
+        db.query_row(
+            "SELECT mysql_route IS NULL AND mysql_tables='{}' FROM resource_bindings",
+            [],
+            |r| r.get::<_, bool>(0)
+        )
+        .unwrap()
+    );
+}

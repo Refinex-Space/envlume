@@ -194,6 +194,8 @@ fn utc<S: serde::Serializer>(value: &UtcDateTime, s: S) -> Result<S::Ok, S::Erro
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
+    #[serde(skip)]
+    pub resource_scope: Option<envlume_domain::ResourceScope>,
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding_alias: Option<Alias>,
@@ -219,6 +221,7 @@ pub struct Report {
 impl Report {
     pub fn new(operation: &'static str) -> Self {
         Self {
+            resource_scope: None,
             schema_version: 1,
             request_id: RequestId::generate(),
             timestamp_utc: UtcDateTime::now(),

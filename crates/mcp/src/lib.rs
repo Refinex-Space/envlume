@@ -38,6 +38,12 @@ pub trait BoundProject: Send + Sync {
     fn environments(&self, _: Value) -> Option<Report> {
         None
     }
+    fn remote_visibility(&self) -> Result<(bool, bool), ErrorCode> {
+        Ok((false, false))
+    }
+    fn remote(&self, _name: &str, _args: Value) -> Option<Report> {
+        None
+    }
     fn doctor_visible(&self) -> Result<bool, ErrorCode> {
         Ok(false)
     }
@@ -197,6 +203,33 @@ impl ServerHandler for Server {
             tools.push(Tool::new("task_run","Run a previously confirmed named build.",
                 json!({"type":"object","properties":{"taskId":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[a-z][a-z0-9_-]*$"}},"required":["taskId"],"additionalProperties":false}).as_object().unwrap().clone()));
         }
+        let (connect, schema) = self.project()?.remote_visibility().map_err(rejection)?;
+        for (enabled, name, description) in [
+            (
+                connect,
+                "connection_test",
+                "Check an authorized MySQL connection.",
+            ),
+            (
+                schema,
+                "database_schema",
+                "Read permitted MySQL columns and indexes.",
+            ),
+        ] {
+            if enabled {
+                let alias = json!({"type":"string","minLength":1,"maxLength":64,"pattern":"^[a-z][a-z0-9_-]*$"});
+                let mut props = json!({"target":alias,"resource":alias});
+                if name == "database_schema" {
+                    props["table"] = json!({"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z_][A-Za-z0-9_]*$"});
+                }
+                let input = json!({"type":"object","properties":props,"required":["target","resource"],"additionalProperties":false});
+                tools.push(Tool::new(
+                    name,
+                    description,
+                    input.as_object().unwrap().clone(),
+                ));
+            }
+        }
         Ok(ListToolsResult::with_all_items(tools))
     }
     async fn call_tool(
@@ -217,6 +250,17 @@ impl ServerHandler for Server {
                 let project = project.clone();
                 tokio::task::spawn_blocking(move || {
                     project.tasks(params.name.as_ref(), arguments, &|| ctx.ct.is_cancelled())
+                })
+                .await
+                .map_err(|_| rejection(ErrorCode::InternalError))?
+                .ok_or_else(|| ErrorData::invalid_params("Unknown tool", None))?
+            }
+            "connection_test" | "database_schema" => {
+                let project = project.clone();
+                tokio::task::spawn_blocking(move || {
+                    project
+                        .remote(params.name.as_ref(), arguments)
+                        .map(|r| json!(r))
                 })
                 .await
                 .map_err(|_| rejection(ErrorCode::InternalError))?

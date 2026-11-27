@@ -182,7 +182,9 @@ fn main() -> ExitCode {
         return approve(Path::new(&args[1]), &args[2..]);
     }
     if args.first().is_some_and(|s| {
-        s == "credential"
+        s == "database"
+            || s == "connection"
+            || s == "credential"
             || s == "environment"
             || s == "report"
             || s == "project"

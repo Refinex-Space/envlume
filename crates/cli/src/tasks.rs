@@ -370,6 +370,7 @@ fn archived_error(
 /// Use the same approval, worker and audit path for the CLI and the binding-scoped MCP adapter.
 pub(super) struct Tasks {
     pub session: Session<LocalRegistration>,
+    registry: std::sync::OnceLock<Result<envlume_connectors::Registry>>,
     store: Store,
     scope: EvidenceScope,
     binding: BindingId,
@@ -395,11 +396,54 @@ impl Tasks {
             .map_err(|e| Failure::from(e).0)?;
         Ok(Self {
             session,
+            registry: Default::default(),
             store,
             scope,
             binding,
             actor,
         })
+    }
+    pub(super) fn remote_visibility(&self) -> std::result::Result<(bool, bool), ErrorCode> {
+        let backend = self
+            .registry
+            .get()
+            .and_then(|r| r.as_ref().ok())
+            .map(|r| r as &dyn envlume_application::remote::DatabaseBackend);
+        self.session.refresh_remote(backend)
+    }
+    pub(super) fn environments(&self, args: Value) -> Report {
+        use envlume_application::remote::DatabaseBackend;
+        if let Some(Ok(registry)) = self.registry.get() {
+            let _visibility = self.remote_visibility();
+            self.session
+                .environment_health(args, &|id| registry.health(self.binding, id))
+        } else {
+            self.session.environment_list(args)
+        }
+    }
+    pub(super) fn database(&self, name: &'static str, args: Value) -> Report {
+        let registry = self.registry.get_or_init(|| {
+            let vault = envlume_secrets::NativeVault::for_catalogue(self.store.clone())
+                .map_err(|e| e.code())?;
+            let mysql =
+                envlume_connector_mysql::MySqlConnector::new(vault).map_err(|e| e.code())?;
+            Ok(envlume_connectors::Registry::new(mysql))
+        });
+        let report = match registry {
+            Ok(backend) => self.session.remote_operation(name, args, backend),
+            Err(failure) => {
+                let mut r = Report::new(name);
+                r.fail(failure.0, failure.1);
+                r
+            }
+        };
+        self.inspect(report)
+    }
+    pub(super) fn close_database(&self) {
+        use envlume_application::remote::DatabaseBackend;
+        if let Some(Ok(r)) = self.registry.get() {
+            r.close();
+        }
     }
     pub fn inspect(&self, mut report: Report) -> Report {
         if let Err(error) = self.store.record(
@@ -413,6 +457,7 @@ impl Tasks {
         ) {
             let failure = Failure::from(error);
             report.fail(failure.0, failure.1);
+            report.evidence_id = None;
         }
         report
     }

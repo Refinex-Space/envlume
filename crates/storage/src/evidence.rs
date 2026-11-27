@@ -96,8 +96,8 @@ impl Store {
             (entry.decision(), report.summary.as_str())
         };
         let sql = "INSERT INTO execution_records(id,request_id,evidence_id,project_id,binding_id,
-                capability,actor,decision,sanitized_summary,exit_code,duration_ms,created_at,details_json)
-            VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
+                capability,actor,decision,sanitized_summary,exit_code,duration_ms,created_at,details_json,target_id,resource_id)
+            VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
             ON CONFLICT(id) DO UPDATE SET evidence_id=excluded.evidence_id,decision=excluded.decision,
                 sanitized_summary=excluded.sanitized_summary,exit_code=excluded.exit_code,
                 duration_ms=excluded.duration_ms,details_json=excluded.details_json
@@ -120,7 +120,9 @@ impl Store {
                         entry.outcome.and_then(|r| r.exit_code),
                         i64::try_from(report.duration_ms).unwrap_or(i64::MAX),
                         (report.timestamp_utc.unix_timestamp_nanos() / 1_000_000) as i64,
-                        details.to_string()
+                        details.to_string(),
+                        report.resource_scope.map(|s| s.target.0),
+                        report.resource_scope.map(|s| s.resource.0)
                     ],
                 )
                 .map_err(database_error)?;

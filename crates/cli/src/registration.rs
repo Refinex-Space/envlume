@@ -49,7 +49,17 @@ impl BoundProject for Tasks {
         self.session.can_inspect_environments()
     }
     fn environments(&self, args: Value) -> Option<Report> {
-        Some(self.session.environment_list(args))
+        Some(Tasks::environments(self, args))
+    }
+    fn remote_visibility(&self) -> Result<(bool, bool), ErrorCode> {
+        Tasks::remote_visibility(self)
+    }
+    fn remote(&self, name: &str, args: Value) -> Option<Report> {
+        match name {
+            "connection_test" => Some(self.database("connection_test", args)),
+            "database_schema" => Some(self.database("database_schema", args)),
+            _ => None,
+        }
     }
     fn doctor_visible(&self) -> Result<bool, ErrorCode> {
         self.session.can_inspect_toolchain()

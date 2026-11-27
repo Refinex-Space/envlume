@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "crates/connectors",
+    "crates/connector-mysql",
     "crates/secrets",
     "crates/policy",
     "crates/audit",
@@ -31,3 +33,5 @@ envlume-execution = { path = "crates/execution" }
 envlume-audit = { path = "crates/audit" }
 envlume-policy = { path = "crates/policy" }
 envlume-secrets = { path = "crates/secrets" }
+envlume-connectors = { path = "crates/connectors" }
+envlume-connector-mysql = { path = "crates/connector-mysql" }

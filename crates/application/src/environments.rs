@@ -6,6 +6,12 @@ use envlume_domain::*;
 pub use envlume_policy::RemoteAction;
 
 pub fn visible(state: &BindingSnapshot) -> Vec<VisibleEnvironment> {
+    visible_with_health(state, &|_| Health::Unknown)
+}
+pub(crate) fn visible_with_health(
+    state: &BindingSnapshot,
+    health: &dyn Fn(ResourceId) -> Health,
+) -> Vec<VisibleEnvironment> {
     let now = UtcDateTime::now();
     let mut visible = Vec::new();
     for t in &state.targets {
@@ -35,7 +41,7 @@ pub fn visible(state: &BindingSnapshot) -> Vec<VisibleEnvironment> {
             })
             .map(|r| VisibleResource {
                 alias: r.alias.clone(),
-                health: Health::Unknown,
+                health: health(r.id),
             })
             .collect();
         if resources.is_empty() {
@@ -116,6 +122,12 @@ pub enum Edit {
         alias: Alias,
         endpoint: Endpoint,
     },
+    MySqlPolicy {
+        target: Alias,
+        alias: Alias,
+        route: MySqlRoute,
+        tables: TableScope,
+    },
     Grant {
         target: Alias,
         alias: Alias,
@@ -147,7 +159,8 @@ impl Edit {
     fn selectors(&self) -> (&Alias, Option<&Alias>) {
         match self {
             Self::Target { alias, .. } | Self::Rename { alias, .. } => (alias, None),
-            Self::Resource { target, alias, .. }
+            Self::MySqlPolicy { target, alias, .. }
+            | Self::Resource { target, alias, .. }
             | Self::Grant { target, alias, .. }
             | Self::Revoke { target, alias, .. } => (target, Some(alias)),
         }
@@ -207,6 +220,14 @@ impl Reviewed {
                 {
                     return Err(ErrorCode::InvalidInput);
                 }
+            }
+            Edit::MySqlPolicy { route, tables, .. } => {
+                let r = resource
+                    .filter(|r| {
+                        r.status == Status::Active && r.endpoint_confirmed && r.database.is_some()
+                    })
+                    .ok_or(ErrorCode::TargetNotAllowed)?;
+                crate::mysql_policy::validate(r, route, tables)?;
             }
             Edit::Resource { endpoint, .. } => {
                 if !endpoint.validate() {
@@ -324,6 +345,22 @@ pub fn manage(
             "Set target kind={kind:?} risk={risk:?}. Classification changes revoke its remote grants."
         ),
         Edit::Rename { to, .. } => format!("Rename target to {}.", to.as_str()),
+        Edit::MySqlPolicy { route, tables, .. } => {
+            let r = reviewed
+                .resource
+                .as_ref()
+                .ok_or(ErrorCode::TargetNotAllowed)?;
+            format!(
+                "Approve MySQL {}:{} {:?}, database {:?}, dial IPs {:?}, CA SHA-256 {}, tables and columns {:?}. Route changes detach credentials; policy changes revoke grants.",
+                r.host,
+                r.port,
+                r.tls,
+                r.database,
+                route.ips,
+                crate::mysql_policy::ca_summary(route),
+                tables
+            )
+        }
         Edit::Resource { endpoint, .. } => {
             let existing = reviewed.resource.as_ref().map(Endpoint::from_resource);
             format!(

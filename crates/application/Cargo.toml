@@ -6,6 +6,10 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+sha2 = "0.10"
+pem = "3"
+rustls-pki-types = "1"
+rustls-webpki = {version="0.103",default-features=false,features=["std"]}
 envlume-policy.workspace = true
 envlume-workspace.workspace = true
 envlume-domain.workspace = true

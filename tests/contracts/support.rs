@@ -65,6 +65,8 @@ pub fn state() -> BindingSnapshot {
         port: 3306,
         tls: TlsMode::VerifyIdentity,
         endpoint_confirmed: true,
+        route: None,
+        tables: Default::default(),
         database: Some("orders".into()),
         credential_ref: Some(CredentialRef("fixture-reference".into())),
         policy_labels: vec![],

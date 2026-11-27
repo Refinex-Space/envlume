@@ -105,6 +105,9 @@ impl Entry<'_> {
     pub fn details(&self) -> Value {
         let r = self.outcome;
         let layer = match self.report.error_code {
+            Some(ErrorCode::NetworkUnreachable) => "network",
+            Some(ErrorCode::CredentialUnavailable) => "credential",
+            _ if self.report.resource_scope.is_some() => "service",
             Some(ErrorCode::ToolchainMissing) => "toolchain",
             Some(ErrorCode::ProjectNotTrusted | ErrorCode::BindingRevoked) => "workspace",
             Some(ErrorCode::PolicyDenied) if r.is_none() => "policy",
@@ -151,9 +154,15 @@ impl Entry<'_> {
             }
             _ => "Completed",
         };
+        let diagnostic = if self.report.resource_scope.is_some() {
+            self.report.summary.as_str()
+        } else {
+            diagnostic
+        };
         json!({
             "schemaVersion":1, "operation":self.report.operation, "diagnosticLayer":layer,
             "host":{"os":std::env::consts::OS,"architecture":std::env::consts::ARCH}, "tools":tools,
+            "targetAlias":self.report.target_alias, "remoteDiagnostic":self.report.resource_scope.map(|_|&self.report.summary),
             "taskId":self.template.map(Template::key), "workingDirectory":"<workspace>",
             "command":self.template.map(|t| [vec![t.executable()], t.arguments().to_vec()].concat()),
             "timestampUtc":json!(self.report)["timestampUtc"], "errorCode":self.report.error_code,
