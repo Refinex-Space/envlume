@@ -1,0 +1,30 @@
+{
+  "revision": "6bc113b",
+  "platform": "macOS 26.5.2 arm64",
+  "mysql": "8.4.11",
+  "query": {
+    "defaultRows": 200,
+    "deniedBeforeLoginAndMySQL": 12,
+    "elapsedMs": 1604,
+    "escapedRows": 22,
+    "parallel": 12,
+    "tightenedRows": 3
+  },
+  "completeResponse": {
+    "cliBytes": 99876,
+    "mcpBytes": 255001,
+    "tightMcpBytes": 1109,
+    "evidenceId": "5b3edad9-92d5-4d5f-b490-77ca6a4fe740",
+    "requestId": "90edb430-dca8-4919-a832-bf1edb2556de",
+    "audit": {
+      "columnCount": 2,
+      "maskedColumns": 1,
+      "rowCount": 22,
+      "truncated": true
+    }
+  },
+  "connectionsAfterClose": {
+    "dev": 0,
+    "test": 0
+  }
+}

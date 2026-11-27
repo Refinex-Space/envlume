@@ -30,4 +30,16 @@ Phase 2 · 环境与 MySQL　·　[返回交付总表](../PLAN.md)
 
 ## 执行记录
 
-待执行。收尾时登记修订、平台/版本、实际命令或操作、对应验收编号、结果与脱敏证据位置。
+2026-11-27，实施修订 `6bc113b`。macOS 26.5.2 arm64、Rust 1.99.1、隔离容器 MySQL 8.4.11，两个独立数据库账号，原生 Keychain、CLI 和 MCP STDIO。[本机脱敏实录](../evidence/T12-query.json) · [查询边界](../../architecture/adr/ADR-0015.md)
+
+| 验收 | 实际结果 |
+|---|---|
+| T12-A01 | 通过。客户端独立核对 SHOW GRANTS，直接 INSERT 得到 MySQL 1142。已批准的结构和行数据均可读；可读账号临时增加 UPDATE 后，查询在执行前被拒绝。对原列、重命名列和派生别名的直接投影均返回 `[REDACTED]`。通过 CLI 按 MCP 返回的 evidenceId 复查到匹配的 requestId、资源、行列数与遮蔽决定，报告中无 SQL 或行值。 |
+| T12-A02 | 通过。12 个真实拒绝请求覆盖多语句、函数、锁、写操作、管理命令、跨库、越界表列、派生表、别名、通配符与遮蔽列的间接使用。凭据访问计数及 MySQL 对该账号的语句计数均未增加。允许的嵌套投影、表别名、COUNT 和通配展开均以真实数据核对。 |
+| T12-A03 | 通过。220 行数据在默认策略下返回 200 行；本地收紧为 7 行、再收紧至 3 行，旧授权失效。零行、过长单行、多字节与转义字符分别验证。含 22 行的样本，完整 CLI 为 99,876 字节，完整 MCP 为 255,001 字节（含换行和两份结果）。8 KiB 策略样本完整 MCP 为 1,109 字节。持有测试表锁时同时发出 12 个请求，约 1604 ms 后得到池满及超时诊断；持锁期间检查服务器已无等待查询，释放锁后新查询成功。夹具关闭后 DEV/TEST 物理会话均为零。 |
+
+复跑 `python3 -B tests/mysql/review.py`。macOS 额外经过真实 Keychain 和独立 CLI/MCP，Linux 的专用容器作业通过测试凭据适配器运行同一驱动。工作区检查使用 `pnpm install --frozen-lockfile`、`pnpm lint`、`pnpm typecheck`、`pnpm unit`、`pnpm build`、`cargo fmt --all --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --locked`。
+
+### 移交 T13
+
+CLI 的 SQL 从 stdin 读取。MCP `database_query` 沿用冻结的输入与结果结构。按 evidenceId 回查需在同一受信绑定中运行；夹具清理后，历史样本保存在上方脱敏实录。T13 可用同一夹具对照八项工具与 CLI 输出。

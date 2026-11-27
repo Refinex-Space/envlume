@@ -184,6 +184,28 @@ envlume database schema dev primary-db --table orders --binding <binding-id> --j
 
 已获准的 MCP 绑定会发现 `connection_test` 和/或 `database_schema`；长驻进程中的 `environment_list` 返回最近观测到的健康状态。连接证据可用本地 `report show` 复核。运行产品只需已配置的服务和系统凭据，Docker 用于复跑验收。[T11 验收与诊断](docs/plan/tasks/T11-mysql-connect-schema.md)
 
+### 读取 MySQL 行数据
+
+在已确认的 DEV 或 TEST 资源上创建查询策略文件。下例允许读取订单编号，并把姓名显示为 `[REDACTED]`。可读列和遮蔽列均须包含在该资源的元数据清单中。
+
+```json
+{
+  "tables": {"orders": {"readable": ["id"], "masked": ["name"]}},
+  "max_rows": 50,
+  "max_bytes": 32768,
+  "timeout_ms": 2000
+}
+```
+
+```sh
+envlume environment mysql-query-policy dev primary-db query-policy.json --binding <binding-id>
+envlume environment grant dev primary-db database.read --binding <binding-id>
+echo 'SELECT id, name FROM orders ORDER BY id LIMIT 5' | envlume database query dev primary-db --binding <binding-id> --json
+envlume report show --evidence <evidence-id> --binding <binding-id> --json
+```
+
+账号须直接获授 SELECT，使用无活动角色、无写入与转授权限的专用账号。SQL 从标准输入读取。MCP 使用相同的策略与 `database_query` 契约。遮蔽列可改名投影，筛选和排序仅接受可读列。未指定限额时采用 200 行、262144 字节、5000 毫秒；可调范围分别为 1–200、4096–262144、1–5000。结果的 `truncated` 表示达到行或字节限额，超时返回 `TIMEOUT`。变更查询策略后需要重新签发读取授权。[支持的 SQL 与策略](docs/architecture/adr/ADR-0015.md)
+
 ### 构建与验证
 
 以下命令适用于 macOS 终端和 Windows PowerShell。先执行上面的锁定安装，并准备好本机 Maven 3、完整 JDK 与 npm。将 `JAVA_HOME` 指向测试 JDK；全量测试在临时工作区执行一次真实的 Maven 测试和 Node 构建，并从 Maven Central 获取夹具依赖。
