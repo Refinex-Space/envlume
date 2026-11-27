@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { createInterface } from "node:readline";
 import { readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import Ajv from "ajv/dist/2020.js";
@@ -349,6 +350,18 @@ await session(async (rpc, send) => {
     "POLICY_DENIED",
     sql,
   );
+  const priorQuery = log.find((entry) => entry.tool === "database_query").mcp;
+  const archived = cli([
+    "report",
+    "show",
+    "--evidence",
+    priorQuery.evidenceId,
+    ...scope,
+  ]);
+  assert.equal(archived.requestId, priorQuery.requestId);
+  assert.equal(archived.query.rowCount, 1);
+  assert.equal(archived.query.maskedColumns, 1);
+  assert.ok(!("result" in archived));
   assert.ok(!(await list()).some((t) => t.name === "database_query"));
   assert.ok((await list()).some((t) => t.name === "database_schema"));
 });
@@ -387,8 +400,35 @@ assert.deepEqual([...layers].sort(), [
   "workflow",
   "workspace",
 ]);
+// Only the disposable catalogue is modified here. Leave the binding and its other grants live.
+const catalogue = new DatabaseSync(join(store, "data", "envlume.db"));
+try {
+  const retired = catalogue
+    .prepare(
+      "UPDATE capability_grants SET revoked_at=unixepoch('subsec')*1000 WHERE binding_id=? AND capability='project.inspect' AND revoked_at IS NULL",
+    )
+    .run(Buffer.from(binding.replaceAll("-", ""), "hex"));
+  assert.equal(retired.changes, 1);
+  const prior = log.find((entry) => entry.tool === "database_query").mcp;
+  for (const operation of [
+    ["show", "--request", prior.requestId],
+    ["show", "--evidence", prior.evidenceId],
+    ["clear"],
+  ]) {
+    assert.equal(
+      cli(["report", ...operation, ...scope], 3).errorCode,
+      "POLICY_DENIED",
+    );
+  }
+} finally {
+  catalogue.close();
+}
 const evidence = {
   protocol: log,
+  history: {
+    readableAfterResourceRevocation: true,
+    deniedAfterProjectInspectRevocation: ["request", "evidence", "clear"],
+  },
   exitCodes: Object.fromEntries(exitTable),
   diagnosticLayers: [...layers].sort(),
   auditedRequests: requests.size,

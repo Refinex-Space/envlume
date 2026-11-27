@@ -118,7 +118,7 @@ envlume report show --request <request-id> --binding <binding-id> --json
 envlume report clear --binding <binding-id> --json
 ```
 
-报告包含调用主体、工具版本、固定命令摘要、时间、耗时、退出码和诊断建议。Maven 输出中可识别的 Surefire 汇总会留下测试计数，可和项目的 `target/surefire-reports` 对照。构建返回非零时，CLI 调用可正常完成，报告的 `decision` 为 `FAILED`。取消和缺少工具记为 `SKIPPED`，授权拒绝记为 `DENIED`。记录在活动 SQLite 目录中保留 30 天，读写记录时清理过期项；`report clear` 删除当前绑定的记录。历史查询仅通过本地 CLI 提供。[T08 验收记录](docs/plan/tasks/T08-execution-evidence.md)
+报告包含调用主体、工具版本、固定命令摘要、时间、耗时、退出码和诊断建议。Maven 输出中可识别的 Surefire 汇总会留下测试计数，可和项目的 `target/surefire-reports` 对照。构建返回非零时，CLI 调用可正常完成，报告的 `decision` 为 `FAILED`。取消和缺少工具记为 `SKIPPED`，授权拒绝记为 `DENIED`。记录在活动 SQLite 目录中保留 30 天，读写记录时清理过期项；`report clear` 删除当前绑定的记录。在当前受信工作区，`report show` 和 `report clear` 均要求本绑定的 `project.inspect` 有效。撤销数据库读取权后，保有项目查看权的用户仍可在本地 CLI 复查历史摘要。[T08 验收记录](docs/plan/tasks/T08-execution-evidence.md)
 
 ### 配置环境与资源
 

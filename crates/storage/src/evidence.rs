@@ -26,6 +26,30 @@ fn purge_expired(tx: &rusqlite::Connection) -> Result<(), ManagementError> {
     Ok(())
 }
 impl Store {
+    fn authorize_history(
+        tx: &rusqlite::Connection,
+        binding: BindingId,
+        origin: &Path,
+    ) -> Result<(), ManagementError> {
+        let workspace = Self::verified_workspace(tx, binding, origin)?;
+        let allowed: bool = tx
+            .query_row(
+                "SELECT EXISTS (
+                SELECT 1 FROM capability_grants g JOIN projects p ON p.id=g.project_id
+                WHERE g.binding_id=?1 AND g.project_id=?2 AND p.deleted_at IS NULL
+                  AND g.capability='project.inspect' AND g.revoked_at IS NULL
+                  AND (g.expires_at IS NULL OR g.expires_at > unixepoch('subsec')*1000)
+            )",
+                params![binding.0, workspace.project_id.0],
+                |row| row.get(0),
+            )
+            .map_err(database_error)?;
+        if !allowed {
+            return Err(ManagementError::ConfirmationRequired);
+        }
+        Ok(())
+    }
+
     pub fn evidence_scope(
         &self,
         binding: BindingId,
@@ -139,7 +163,7 @@ impl Store {
         key: RecordKey,
     ) -> Result<Option<Value>, ManagementError> {
         self.workspace_write(|tx| {
-            Self::verified_workspace(tx,binding,origin)?;
+            Self::authorize_history(tx,binding,origin)?;
             purge_expired(tx)?;
             let (request, evidence) = match key {
                 RecordKey::Request(r) => (Some(r.0),None), RecordKey::Evidence(e) => (None,Some(e.0)),
@@ -157,7 +181,7 @@ impl Store {
         origin: &Path,
     ) -> Result<usize, ManagementError> {
         self.workspace_write(|tx| {
-            Self::verified_workspace(tx, binding, origin)?;
+            Self::authorize_history(tx, binding, origin)?;
             Ok(tx
                 .execute(
                     "DELETE FROM execution_records WHERE binding_id=?1",

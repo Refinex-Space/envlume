@@ -50,4 +50,4 @@ Phase 2 · 环境与 MySQL　·　[返回交付总表](../PLAN.md)
 
 §12 的 `--version`、全局及绑定 doctor、project add/list/inspect/context、environment list、task list/run、mcp 已有对应独立进程测试。`environment list --project` 会核对当前工作区的项目归属。集成安装、验证与卸载按计划交给 T15–T18。R2 可从上述夹具继续验收跨项目与跨目标隔离。
 
-历史权限回归发现，保留受信路径并使绑定的授权过期后，仍能读取旧记录。T13-A03 的输出验收已通过，历史读取和清理的权限验收仍待完成。
+T13-A03 历史权限验收通过。撤销 `database.read` 后，以原 evidenceId 查到匹配的请求和遮蔽摘要。撤销 `project.inspect` 后，按 requestId、evidenceId 查阅和清理均返回 `POLICY_DENIED`（退出码 3）。存储回归另测授权过期、同项目另一绑定仍有权限、本绑定仍有其他权限，以及重新授权后的读取和清理。复跑 `cargo test --locked -p envlume-storage --test evidence_access`。[授权决策](../../architecture/adr/ADR-0016.md)
