@@ -10,6 +10,8 @@ mod paths;
 mod repository;
 mod schema;
 mod tasks;
+#[cfg(windows)]
+mod windows_permissions;
 mod workspaces;
 pub use envlume_application::projects::StorageError as Error;
 use envlume_application::projects::{ProjectEntry, ProjectRepository};

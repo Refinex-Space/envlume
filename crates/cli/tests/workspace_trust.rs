@@ -221,7 +221,7 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
                 #[cfg(windows)]
                 if let Some(pid) = child.process_id() {
                     let ps = PathBuf::from(env::var_os("SystemRoot").unwrap())
-                        .join(r"System32\WindowsPowerShell1.0\powershell.exe");
+                        .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
                     let script = r#"$procs=Get-CimInstance Win32_Process; $ids=@([int]$env:T15_PID); while ($ids.Count) { $children=@($procs | Where-Object {$ids -contains $_.ParentProcessId}); foreach ($c in $children) { Write-Output ('T15 active child: '+$c.Name) }; $ids=@($children | ForEach-Object {$_.ProcessId}) }"#;
                     let output = Command::new(ps)
                         .args(["-NoProfile", "-NonInteractive", "-Command", script])

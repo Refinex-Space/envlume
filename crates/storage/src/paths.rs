@@ -102,6 +102,9 @@ fn prepare_private(root: &Path, cli: bool) -> Result<()> {
         os::windows::process::CommandExt,
         process::{Command, Stdio},
     };
+    if crate::windows_permissions::existing(root, cli)? {
+        return Ok(());
+    }
     // Use Windows PowerShell's built-in .NET ACL APIs. Path data is never a command.
     let shell = std::env::var_os("SystemRoot").ok_or(Error::StorageUnavailable)?;
     let output =

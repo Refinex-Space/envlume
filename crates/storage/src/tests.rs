@@ -494,3 +494,42 @@ fn legacy_resources_keep_metadata_and_references_but_require_new_approval() {
         .unwrap()
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn existing_private_catalogue_needs_no_shell_and_rejects_an_additional_sid() {
+    let (_tmp, paths) = isolated();
+    drop(previous(&paths));
+    Store::open(paths.clone()).unwrap();
+    // A fresh process must apply the same DACL policy with no PowerShell available.
+    let mut proc = worker(
+        &paths,
+        Some(("SystemRoot", std::ffi::OsStr::new(r"Z:\absent-fixture"))),
+    );
+    assert!(proc.wait().unwrap().success());
+    let dir = paths.root().join("logs");
+    let cmd = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+        .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+    let status = Command::new(cmd)
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            r#"
+$ErrorActionPreference='Stop'
+$d=[IO.DirectoryInfo]::new($env:T15_TEST_ACL_DIR)
+$a=$d.GetAccessControl()
+$s=[Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+$a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($s,'Read','Allow'))
+$d.SetAccessControl($a)
+"#,
+        ])
+        .env("T15_TEST_ACL_DIR", dir)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert!(matches!(
+        Store::open(paths),
+        Err(Error::PrivateDirectoryRequired)
+    ));
+}
