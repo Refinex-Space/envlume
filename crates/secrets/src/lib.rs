@@ -47,36 +47,44 @@ impl Login {
     }
 }
 
-pub struct NativeVault {
+pub struct NativeVault<C> {
+    catalogue: C,
     namespace: String,
 }
-impl NativeVault {
-    pub fn for_catalogue(root: &Path) -> Result<Self, Fault> {
-        let path = root.canonicalize().map_err(|_| Fault::Storage)?;
+impl<C: Catalogue> NativeVault<C> {
+    pub fn for_catalogue(catalogue: C) -> Result<Self, Fault> {
+        let path = catalogue
+            .catalogue_root()
+            .canonicalize()
+            .map_err(|_| Fault::Storage)?;
         let digest = Sha256::digest(path.as_os_str().as_encoded_bytes());
         Ok(Self {
+            catalogue,
             namespace: format!("io.envlume.credentials.v1.{digest:x}"),
         })
     }
-    pub fn status(&self, db: &impl Catalogue, selection: &Selection) -> Result<(), Fault> {
-        credentials::status(db, &Writer(self), selection)
+    pub fn status(&self, selection: &Selection) -> Result<(), Fault> {
+        credentials::status(&self.catalogue, &Writer(&self.namespace), selection)
     }
     pub fn change(
         &self,
-        db: &impl Catalogue,
         selection: &Selection,
         action: Change,
         input: Option<&Login>,
     ) -> Result<Saved, Fault> {
-        credentials::change(db, &Writer(self), selection, action, input)
+        credentials::change(
+            &self.catalogue,
+            &Writer(&self.namespace),
+            selection,
+            action,
+            input,
+        )
     }
-    pub fn cleanup(
-        &self,
-        db: &impl Catalogue,
-        binding: envlume_domain::BindingId,
-        origin: &Path,
-    ) -> Result<(), Fault> {
-        credentials::cleanup(db, &Writer(self), binding, origin)
+    pub fn rebind(&self, dest: &Selection, source: &Selection) -> Result<Saved, Fault> {
+        credentials::rebind(&self.catalogue, &Writer(&self.namespace), dest, source)
+    }
+    pub fn cleanup(&self, binding: envlume_domain::BindingId, origin: &Path) -> Result<(), Fault> {
+        credentials::cleanup(&self.catalogue, &Writer(&self.namespace), binding, origin)
     }
     pub fn with_login<T>(
         &self,
@@ -95,22 +103,22 @@ impl NativeVault {
         use_login(user, password)
     }
 }
-struct Writer<'a>(&'a NativeVault);
+struct Writer<'a>(&'a str);
 impl CredentialWriter for Writer<'_> {
     type Input = Login;
     fn write_new(&self, key: &ItemKey, input: &Login) -> Result<(), Fault> {
-        platform::write(&self.0.namespace, &key.reference(), &input.0)
+        platform::write(self.0, &key.reference(), &input.0)
     }
     fn available(&self, key: &ItemKey) -> Result<(), Fault> {
-        platform::read(&self.0.namespace, &key.reference())?
+        platform::read(self.0, &key.reference())?
             .fields()
             .map(|_| ())
     }
     fn delete(&self, key: &ItemKey) -> Result<(), Fault> {
-        platform::delete(&self.0.namespace, &key.reference())
+        platform::delete(self.0, &key.reference())
     }
 }
-impl SecretStore for NativeVault {
+impl<C: Catalogue> SecretStore for NativeVault<C> {
     fn check_reference(&self, resource: &AuthorizedResource<'_>) -> Result<(), ErrorCode> {
         self.with_login(resource, |_, _| Ok(()))
     }

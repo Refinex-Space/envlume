@@ -20,6 +20,9 @@ impl ItemKey {
             item: CredentialId::generate(),
         }
     }
+    pub fn target(&self) -> TargetId {
+        self.target
+    }
     pub fn reference(&self) -> String {
         format!("envlume:v1:{}:{}", self.target.0, self.item.0)
     }
@@ -167,6 +170,7 @@ pub fn select(
 
 pub trait Catalogue {
     type Lock;
+    fn catalogue_root(&self) -> &Path;
     fn lock_credentials(&self) -> Result<Self::Lock, Fault>;
     fn verified_project(&self, binding: BindingId, origin: &Path) -> Result<ProjectId, Fault>;
     fn validate(&self, s: &Selection) -> Result<(), Fault>;
@@ -176,6 +180,12 @@ pub trait Catalogue {
         s: &Selection,
         new: Option<&ItemKey>,
         remove_resource: bool,
+    ) -> Result<(), Fault>;
+    fn attach_shared(
+        &self,
+        dest: &Selection,
+        source: &Selection,
+        key: &ItemKey,
     ) -> Result<(), Fault>;
     fn garbage(&self, project: ProjectId) -> Result<Vec<String>, Fault>;
     fn collected(&self, project: ProjectId, reference: &str) -> Result<(), Fault>;
@@ -270,9 +280,46 @@ pub fn change<P: CredentialWriter>(
     }
     // The reference switch has committed. A cleanup failure must not be reported
     // as a failed rotation; its durable journal entry remains retryable.
-    let cleanup_error = collect(db, os, s.project).err();
-    Ok(Saved {
+    Ok(finish(db, os, s.project))
+}
+fn finish(db: &impl Catalogue, os: &impl CredentialWriter, project: ProjectId) -> Saved {
+    let cleanup_error = collect(db, os, project).err();
+    Saved {
         cleanup_pending: cleanup_error.is_some(),
         cleanup_error,
-    })
+    }
+}
+
+/// Only explicit local rebind can share an entry, between resources of the same
+/// confirmed target and server. It never accepts a caller-supplied OS item name.
+pub fn rebind<P: CredentialWriter>(
+    db: &impl Catalogue,
+    os: &P,
+    dest: &Selection,
+    source: &Selection,
+) -> Result<Saved, Fault> {
+    let _lock = db.lock_credentials()?;
+    db.validate(dest)?;
+    db.validate(source)?;
+    let key = dest.shared_key(source)?;
+    os.available(&key)?;
+    db.attach_shared(dest, source, &key)?;
+    Ok(finish(db, os, dest.project))
+}
+impl Selection {
+    pub fn shared_key(&self, source: &Selection) -> Result<ItemKey, Fault> {
+        let (a, b) = (&self.resource, &source.resource);
+        if self.binding != source.binding
+            || self.project != source.project
+            || self.target.id != source.target.id
+            || a.id == b.id
+            || a.host != b.host
+            || a.port != b.port
+            || a.tls != b.tls
+            || a.kind != b.kind
+        {
+            return Err(Fault::Changed);
+        }
+        ItemKey::for_resource(b)
+    }
 }

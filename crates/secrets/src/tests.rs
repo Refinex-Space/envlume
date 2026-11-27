@@ -193,11 +193,7 @@ fn interrupted_publication_shared_refs_and_cleanup_retry() {
     assert!(ItemKey::for_resource(f.selection("dev", "db").resource()).unwrap() == original);
     // A shared reference is retained even when a different resource rotates or is removed.
     let shared = f.selection("dev", "shared");
-    db.execute(
-        "UPDATE resource_bindings SET credential_ref=?1 WHERE id=?2",
-        params![original.reference(), shared.resource().id.0],
-    )
-    .unwrap();
+    credentials::rebind(&f.store, &os, &shared, &s).unwrap();
     change(&s, Change::Replace, Some(&replaced)).unwrap();
     assert!(matches!(
         change(&s, Change::Replace, Some(&input)),
@@ -235,6 +231,10 @@ fn target_isolation_and_interrupted_writer_recovery() {
     let dev = f.selection("dev", "db");
     let devkey = ItemKey::for_resource(dev.resource()).unwrap();
     let test = f.selection("test", "db");
+    assert!(matches!(
+        credentials::rebind(&f.store, &os, &test, &dev),
+        Err(Fault::Changed)
+    ));
     credentials::change(&f.store, &os, &test, Change::Set, Some(&input)).unwrap();
     let testkey = ItemKey::for_resource(f.selection("test", "db").resource()).unwrap();
     assert!(testkey != devkey);
@@ -264,8 +264,34 @@ fn target_isolation_and_interrupted_writer_recovery() {
     assert!(os.available(&testkey).is_err());
 }
 
+// Always release the random test entries, including on an assertion failure.
+struct TrackingWriter<'a> {
+    writer: Writer<'a>,
+    created: RefCell<Vec<ItemKey>>,
+}
+impl CredentialWriter for TrackingWriter<'_> {
+    type Input = Login;
+    fn write_new(&self, key: &ItemKey, input: &Login) -> Result<(), Fault> {
+        self.created.borrow_mut().push(key.clone());
+        self.writer.write_new(key, input)
+    }
+    fn delete(&self, key: &ItemKey) -> Result<(), Fault> {
+        self.writer.delete(key)
+    }
+    fn available(&self, key: &ItemKey) -> Result<(), Fault> {
+        self.writer.available(key)
+    }
+}
+impl Drop for TrackingWriter<'_> {
+    fn drop(&mut self) {
+        for key in self.created.get_mut() {
+            let _ = self.writer.delete(key);
+        }
+    }
+}
+
 struct CheckLogin {
-    vault: NativeVault,
+    vault: NativeVault<Store>,
     expected: &'static str,
     calls: Rc<Cell<u32>>,
 }
@@ -291,9 +317,12 @@ impl ResourceConnector for CheckLogin {
 #[test]
 fn native_lifecycle_authorized_connector_repair_and_redaction() {
     let f = Fixture::new();
-    let vault = || NativeVault::for_catalogue(f.paths.root()).unwrap();
+    let vault = || NativeVault::for_catalogue(f.store.clone()).unwrap();
     let native = vault();
-    let os = Writer(&native);
+    let os = TrackingWriter {
+        writer: Writer(&native.namespace),
+        created: Default::default(),
+    };
     let session = Session::from_registration(f.registry(), f.id, Actor::Cli).unwrap();
     let run = |resource: &str, expected, allowed| {
         let args = json!({"target":"dev","resource":resource});
@@ -361,12 +390,7 @@ fn native_lifecycle_authorized_connector_repair_and_redaction() {
     let s = f.selection("dev", "db");
     let key = ItemKey::for_resource(s.resource()).unwrap();
     let shared = f.selection("dev", "shared");
-    f.db()
-        .execute(
-            "UPDATE resource_bindings SET credential_ref=?1 WHERE id=?2",
-            params![key.reference(), shared.resource().id.0],
-        )
-        .unwrap();
+    native.rebind(&shared, &s).unwrap();
     f.edit(Edit::Grant {
         target: alias("dev"),
         alias: alias("shared"),
@@ -379,6 +403,10 @@ fn native_lifecycle_authorized_connector_repair_and_redaction() {
     let s = f.selection("dev", "shared");
     // Take a real SQLite snapshot while the configured credential exists.
     let backup = f.paths.backups().join("t10-snapshot.db");
+    tempfile::NamedTempFile::new_in(f.paths.backups())
+        .unwrap()
+        .persist(&backup)
+        .unwrap();
     f.db()
         .backup(
             rusqlite::MAIN_DB,
@@ -386,6 +414,21 @@ fn native_lifecycle_authorized_connector_repair_and_redaction() {
             None::<fn(rusqlite::backup::Progress)>,
         )
         .unwrap();
+    // A restored copy must not delete an OS item owned by the source catalogue.
+    let restored = Store::restore_into(
+        &backup,
+        StorePaths::at(f.dir.path().join("restored")).unwrap(),
+    )
+    .unwrap();
+    let local = LocalRegistration {
+        store: restored.clone(),
+        origin: f.registry().origin,
+    };
+    let copy = credentials::select(&local, f.id, &alias("dev"), &alias("shared")).unwrap();
+    let other = NativeVault::for_catalogue(restored).unwrap();
+    assert_eq!(other.status(&copy), Err(Fault::Missing));
+    other.change(&copy, Change::Clear, None).unwrap();
+    assert!(os.available(&key).is_ok());
     let reader = f.db();
     reader
         .execute_batch("BEGIN; SELECT count(*) FROM resource_bindings;")
@@ -449,4 +492,81 @@ fn provider_failure_and_endpoint_changes_during_submission_are_recoverable() {
     )
     .unwrap();
     assert!(os.values.borrow().is_empty());
+}
+
+#[test]
+fn competing_rotation_cannot_publish_over_the_winner() {
+    use std::sync::{Arc, Barrier};
+    struct PausedWrite {
+        written: Arc<Barrier>,
+        release: Arc<Barrier>,
+    }
+    impl CredentialWriter for PausedWrite {
+        type Input = Login;
+        fn write_new(&self, _: &ItemKey, _: &Login) -> Result<(), Fault> {
+            self.written.wait();
+            self.release.wait();
+            Ok(())
+        }
+        fn available(&self, _: &ItemKey) -> Result<(), Fault> {
+            Ok(())
+        }
+        fn delete(&self, _: &ItemKey) -> Result<(), Fault> {
+            Ok(())
+        }
+    }
+    let f = Fixture::new();
+    let original = f.selection("dev", "db");
+    let os = Fake::default();
+    credentials::change(
+        &f.store,
+        &os,
+        &original,
+        Change::Set,
+        Some(&Login::new(USER, FIRST).unwrap()),
+    )
+    .unwrap();
+    let first = f.selection("dev", "db");
+    let stale = f.selection("dev", "db");
+    let written = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    let paused = PausedWrite {
+        written: written.clone(),
+        release: release.clone(),
+    };
+    let second_store = Store::open(f.paths.clone()).unwrap();
+    std::thread::scope(|scope| {
+        let winner = scope.spawn(move || {
+            credentials::change(
+                &second_store,
+                &paused,
+                &first,
+                Change::Replace,
+                Some(&Login::new(USER, SECOND).unwrap()),
+            )
+        });
+        written.wait();
+        let competing = credentials::change(
+            &f.store,
+            &os,
+            &stale,
+            Change::Replace,
+            Some(&Login::new(USER, FIRST).unwrap()),
+        );
+        release.wait();
+        assert!(matches!(competing, Err(Fault::Busy)));
+        assert!(winner.join().unwrap().is_ok());
+    });
+    let winner = ItemKey::for_resource(f.selection("dev", "db").resource()).unwrap();
+    assert!(matches!(
+        credentials::change(
+            &f.store,
+            &os,
+            &stale,
+            Change::Replace,
+            Some(&Login::new(USER, FIRST).unwrap())
+        ),
+        Err(Fault::Changed)
+    ));
+    assert!(ItemKey::for_resource(f.selection("dev", "db").resource()).unwrap() == winner);
 }

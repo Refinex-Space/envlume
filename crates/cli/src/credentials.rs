@@ -31,7 +31,7 @@ fn execute(
             Fault::Storage
         }
     })?;
-    let os = NativeVault::for_catalogue(paths.root())?;
+    let os = NativeVault::for_catalogue(store.clone())?;
     let origin = env::current_dir().map_err(|_| Fault::Untrusted)?;
     if operation == ["cleanup"] {
         if !confirm(
@@ -40,31 +40,55 @@ fn execute(
         ) {
             return Err(Fault::AccessDenied);
         }
-        os.cleanup(&store, binding, &origin)?;
+        os.cleanup(binding, &origin)?;
         return Ok(json!({"schemaVersion":1,"ok":true,"state":"CLEANED"}));
     }
-    let [name, target, resource] = operation else {
-        return Err(Fault::InvalidInput);
+    let (name, target, resource, source) = match operation {
+        ["rebind", t, d, s] => ("rebind", *t, *d, Some(*s)),
+        [op, t, r] if *op != "rebind" => (*op, *t, *r, None),
+        _ => return Err(Fault::InvalidInput),
     };
     let alias = |s: &str| Alias::try_from(s.to_owned()).map_err(|_| Fault::InvalidInput);
-    let selection = credentials::select(
-        &LocalRegistration {
-            store: store.clone(),
-            origin,
-        },
-        binding,
-        &alias(target)?,
-        &alias(resource)?,
-    )?;
-    if *name == "status" {
-        let state = match os.status(&store, &selection) {
+    let registry = LocalRegistration {
+        store: store.clone(),
+        origin,
+    };
+    let select = |resource: &str| {
+        credentials::select(&registry, binding, &alias(target)?, &alias(resource)?)
+    };
+    let selection = select(resource)?;
+    if let Some(source) = source {
+        let source = select(source)?;
+        selection.shared_key(&source)?;
+        let r = selection.resource();
+        let prompt = format!(
+            "Rebind project {}, binding {}, target {}, resource {} to the login of {} at {}:{} ({:?})?",
+            selection.project().0,
+            binding.0,
+            target,
+            resource,
+            source.resource().alias.as_str(),
+            r.host,
+            r.port,
+            r.tls
+        );
+        if !confirm(&prompt, "confirm") {
+            return Err(Fault::AccessDenied);
+        }
+        let saved = os.rebind(&selection, &source)?;
+        return Ok(
+            json!({"schemaVersion":1,"ok":true,"state":"AVAILABLE","cleanupPending":saved.cleanup_pending,"cleanupError":saved.cleanup_error}),
+        );
+    }
+    if name == "status" {
+        let state = match os.status(&selection) {
             Ok(()) => "AVAILABLE",
             Err(Fault::NotSet) => "NOT_SET",
             Err(e) => return Err(e),
         };
         return Ok(json!({"schemaVersion":1,"ok":true,"state":state}));
     }
-    let action = match *name {
+    let action = match name {
         "set" => Change::Set,
         "replace" => Change::Replace,
         "repair" => Change::Repair,
@@ -94,7 +118,7 @@ fn execute(
     } else {
         None
     };
-    let saved = os.change(&store, &selection, action, input.as_ref())?;
+    let saved = os.change(&selection, action, input.as_ref())?;
     let state = match action {
         Change::RemoveResource => "RESOURCE_DISABLED",
         Change::Clear => "NOT_SET",

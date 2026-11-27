@@ -51,6 +51,9 @@ impl Store {
 }
 impl Catalogue for Store {
     type Lock = File;
+    fn catalogue_root(&self) -> &std::path::Path {
+        self.paths.root()
+    }
     fn lock_credentials(&self) -> Result<File, Fault> {
         let path = self.paths.root().join("data/credentials.lock");
         paths::check_file(&path).map_err(storage)?;
@@ -94,11 +97,14 @@ impl Catalogue for Store {
     fn stage(&self, s: &Selection, key: &ItemKey) -> Result<(), Fault> {
         self.credential_tx(true, |tx| {
             check(tx, s)?;
-            tx.execute(
-                "INSERT INTO credential_cleanup(reference,project_id) VALUES(?1,?2)",
+            if key.target()!=s.target().id{return Err(Fault::Changed);}
+            let inserted=tx.execute(
+                "INSERT INTO credential_cleanup(reference,project_id)
+                 SELECT ?1,?2 WHERE NOT EXISTS(SELECT 1 FROM resource_bindings WHERE credential_ref=?1)",
                 params![key.reference(), s.project().0],
             )
             .map_err(|e| storage(database_error(e)))?;
+            if inserted!=1{return Err(Fault::Changed);}
             Ok(())
         })
     }
@@ -108,23 +114,73 @@ impl Catalogue for Store {
         new: Option<&ItemKey>,
         remove_resource: bool,
     ) -> Result<(), Fault> {
-        self.credential_tx(true,|tx|{
-            check(tx,s)?;
-            if let Some(key)=new {
-                let affected=tx.execute("DELETE FROM credential_cleanup WHERE reference=?1 AND project_id=?2",params![key.reference(),s.project().0]).map_err(|e|storage(database_error(e)))?;
-                if affected!=1{return Err(Fault::Changed);}
+        let retire = "DELETE FROM credential_cleanup WHERE reference=?1 AND project_id=?2";
+        let update="UPDATE resource_bindings SET credential_ref=?1,status=CASE WHEN ?2 THEN 'DISABLED' ELSE status END
+            WHERE id=?3 AND target_id=?4";
+        self.credential_tx(true, |tx| {
+            check(tx, s)?;
+            if let Some(key) = new {
+                if key.target() != s.target().id {
+                    return Err(Fault::Changed);
+                }
+                let affected = tx
+                    .execute(retire, params![key.reference(), s.project().0])
+                    .map_err(|e| storage(database_error(e)))?;
+                if affected != 1 {
+                    return Err(Fault::Changed);
+                }
             }
-            let updated=tx.execute("UPDATE resource_bindings SET credential_ref=?1,status=CASE WHEN ?2 THEN 'DISABLED' ELSE status END WHERE id=?3 AND target_id=?4",
-                params![new.map(ItemKey::reference),remove_resource,s.resource().id.0,s.target().id.0]).map_err(|e|storage(database_error(e)))?;
-            if updated!=1{return Err(Fault::Changed);}
+            let affected = tx
+                .execute(
+                    update,
+                    params![
+                        new.map(ItemKey::reference),
+                        remove_resource,
+                        s.resource().id.0,
+                        s.target().id.0
+                    ],
+                )
+                .map_err(|e| storage(database_error(e)))?;
+            if affected != 1 {
+                return Err(Fault::Changed);
+            }
+            Ok(())
+        })
+    }
+    fn attach_shared(
+        &self,
+        dest: &Selection,
+        source: &Selection,
+        key: &ItemKey,
+    ) -> Result<(), Fault> {
+        self.credential_tx(true, |tx| {
+            check(tx, dest)?;
+            check(tx, source)?;
+            if &dest.shared_key(source)? != key {
+                return Err(Fault::Changed);
+            }
+            let affected = tx
+                .execute(
+                    "UPDATE resource_bindings SET credential_ref=?1 WHERE id=?2 AND target_id=?3",
+                    params![key.reference(), dest.resource().id.0, dest.target().id.0],
+                )
+                .map_err(|e| storage(database_error(e)))?;
+            if affected != 1 {
+                return Err(Fault::Changed);
+            }
             Ok(())
         })
     }
     fn garbage(&self, project: ProjectId) -> Result<Vec<String>, Fault> {
-        self.credential_tx(false,|tx|{
-            let mut stmt=tx.prepare("SELECT reference FROM credential_cleanup WHERE project_id=?1 AND NOT EXISTS
-                (SELECT 1 FROM resource_bindings WHERE credential_ref=reference) ORDER BY reference").map_err(|e|storage(database_error(e)))?;
-            stmt.query_map([project.0],|row|row.get(0)).and_then(Iterator::collect).map_err(|e|storage(database_error(e)))
+        let orphaned = "SELECT reference FROM credential_cleanup WHERE project_id=?1 AND NOT EXISTS
+            (SELECT 1 FROM resource_bindings WHERE credential_ref=reference) ORDER BY reference";
+        self.credential_tx(false, |tx| {
+            let mut stmt = tx
+                .prepare(orphaned)
+                .map_err(|e| storage(database_error(e)))?;
+            stmt.query_map([project.0], |row| row.get(0))
+                .and_then(Iterator::collect)
+                .map_err(|e| storage(database_error(e)))
         })
     }
     fn collected(&self, project: ProjectId, reference: &str) -> Result<(), Fault> {
