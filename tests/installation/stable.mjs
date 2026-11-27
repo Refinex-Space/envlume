@@ -160,10 +160,11 @@ function oldRelease() {
   );
   return [descriptor, exe];
 }
-async function mcp(config, cwd, callback, refuse = false) {
+async function mcp(config, cwd, callback, refuse = false, childEnv = minimal) {
   const p = spawn(config.command, config.args, {
     cwd,
-    env: minimal,
+    env: childEnv,
+    windowsHide: true,
     stdio: "pipe",
   });
   const closed = once(p, "close");
@@ -289,7 +290,64 @@ try {
   );
   assert.equal(manage("install").cli.release.sha256, latest.sha256);
   assert.equal(readFileSync(configFile, "utf8"), configuration);
-  integrationReview({ cli: path, desktop, tty, workspace, binding, tmp, env });
+  try {
+    integrationReview({
+      cli: path,
+      desktop,
+      tty,
+      workspace,
+      binding,
+      tmp,
+      env,
+    });
+  } catch (error) {
+    if (windows) {
+      const scrubbed = Object.fromEntries(
+        Object.entries(env).filter(([k]) =>
+          [
+            "HOME",
+            "USERPROFILE",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "SYSTEMROOT",
+            "TEMP",
+            "TMP",
+            "TMPDIR",
+          ].includes(k.toUpperCase()),
+        ),
+      );
+      const canonical = json(
+        path,
+        ["project", "inspect", "--path", workspace, "--json"],
+        { cwd: workspace, environment: minimal },
+      ).binding.canonicalPath;
+      for (const [label, cwd, childEnv] of [
+        ["probe_environment", canonical, scrubbed],
+        ["registered_origin", workspace, scrubbed],
+        ["os_environment", canonical, minimal],
+      ]) {
+        const start = Date.now();
+        try {
+          await mcp(
+            loadConfig(),
+            cwd,
+            async (context) => assert.equal(await context(), alias),
+            false,
+            childEnv,
+          );
+          console.error(
+            "T15 diagnostic",
+            label,
+            "verified",
+            Date.now() - start,
+          );
+        } catch {
+          console.error("T15 diagnostic", label, "failed", Date.now() - start);
+        }
+      }
+    }
+    throw error;
+  }
   Object.assign(receipt, {
     target: host,
     previous: oldVersion,

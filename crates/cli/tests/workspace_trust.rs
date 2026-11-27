@@ -13,6 +13,31 @@ use std::{
     time::Duration,
 };
 
+fn show_integration_phases(trace_tail: &[u8]) {
+    for phase in [
+        "checking",
+        "check_binding",
+        "check_cli",
+        "probe",
+        "runtime_ready",
+        "child_started",
+        "initialized",
+        "tool_replied",
+        "transport_closed",
+        "child_exited",
+        "runtime_closed",
+        "verified",
+        "registered",
+    ] {
+        let needle = format!("envlume_clients: {phase}");
+        if trace_tail
+            .windows(needle.len())
+            .any(|w| w == needle.as_bytes())
+        {
+            eprintln!("T15 observed phase {phase}");
+        }
+    }
+}
 fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
     let pair = native_pty_system()
         .openpty(PtySize {
@@ -158,6 +183,10 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
             }
             if !status.success() {
                 let tail: Vec<u8> = rx.try_iter().flatten().take(8192).collect();
+                if integration {
+                    trace_tail.extend_from_slice(&tail);
+                    show_integration_phases(&trace_tail);
+                }
                 eprintln!(
                     "Confirmed CLI exited {status:?}: {}",
                     String::from_utf8_lossy(&tail)
@@ -188,29 +217,7 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
         }
         if std::time::Instant::now() > deadline {
             if integration {
-                for phase in [
-                    "checking",
-                    "check_binding",
-                    "check_cli",
-                    "probe",
-                    "runtime_ready",
-                    "child_started",
-                    "initialized",
-                    "tool_replied",
-                    "transport_closed",
-                    "child_exited",
-                    "runtime_closed",
-                    "verified",
-                    "registered",
-                ] {
-                    let needle = format!("envlume_clients: {phase}");
-                    if trace_tail
-                        .windows(needle.len())
-                        .any(|w| w == needle.as_bytes())
-                    {
-                        eprintln!("T15 observed phase {phase}");
-                    }
-                }
+                show_integration_phases(&trace_tail);
                 #[cfg(windows)]
                 if let Some(pid) = child.process_id() {
                     let ps = PathBuf::from(env::var_os("SystemRoot").unwrap())
