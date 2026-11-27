@@ -1,8 +1,10 @@
 //! SQLite metadata shared by the local entry points. Connections stay in Rust.
+pub mod cli_install;
 mod credentials;
 mod environments;
 mod evidence;
 pub use evidence::{EvidenceScope, RecordKey};
+mod migrations;
 mod paths;
 mod repository;
 mod schema;
@@ -17,6 +19,7 @@ use std::{io, path::Path, time::Duration};
 pub use workspaces::LocalRegistration;
 
 type Result<T> = std::result::Result<T, Error>;
+pub const SCHEMA_VERSION: i64 = schema::CURRENT;
 const WAIT: Duration = Duration::from_secs(5);
 
 fn database_error(error: rusqlite::Error) -> Error {

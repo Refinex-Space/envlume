@@ -88,6 +88,13 @@ jobs:
           export R1_NATIVE_CLI="$(cygpath -w "target/$CARGO_BUILD_TARGET/debug/envlume.exe")"
           node tests/evidence/java8.mjs --review
       - run: pnpm desktop build --debug --no-bundle --target ${{ matrix.target }} -- --locked
+      - name: Verify the packaged CLI from an unchanged MCP configuration
+        env:
+          T14_DISPOSABLE_PROFILE: "1"
+        run: |
+          desktop="target/$CARGO_BUILD_TARGET/debug/envlume-desktop"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then desktop="$desktop.exe"; fi
+          node tests/installation/stable.mjs "$desktop"
       - run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml apps/desktop/src-tauri/Cargo.toml
 
   mysql:

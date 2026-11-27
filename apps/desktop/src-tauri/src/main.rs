@@ -1,10 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cli;
 mod commands;
 use envlume_storage::StorePaths;
 use tauri::Manager;
 
-fn main() {
+fn main() -> std::process::ExitCode {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.first().is_some_and(|a| a == "--cli") {
+        return cli::maintenance(&args[1..]);
+    }
     commands::with_commands(tauri::Builder::default())
         .setup(|app| {
             let mut args = std::env::args_os().skip(1);
@@ -19,7 +24,16 @@ fn main() {
                 None
             };
             app.manage(commands::DesktopBinding(binding));
-            app.manage(StorePaths::local().map_err(|e| std::io::Error::other(e.message()))?);
+            let paths = StorePaths::local().map_err(|e| std::io::Error::other(e.message()))?;
+            #[cfg(feature = "bundled-cli")]
+            {
+                let installed = cli::install(&paths, true);
+                if let Err(error) = &installed {
+                    eprintln!("Envlume CLI installation: {error:?}. {}", error.message());
+                }
+                app.manage(installed);
+            }
+            app.manage(paths);
             let window = app
                 .get_webview_window("main")
                 .expect("configured main window");
@@ -28,4 +42,5 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run Envlume desktop");
+    std::process::ExitCode::SUCCESS
 }

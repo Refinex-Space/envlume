@@ -22,5 +22,6 @@ rustc-ice-*.txt
 node_modules/
 dist/
 apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/.cli-stage/
 CLAUDE.local.md
 .DS_Store

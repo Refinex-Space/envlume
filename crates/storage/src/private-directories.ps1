@@ -16,7 +16,8 @@ function Assert-Private($entry, $directory) {
         $rules[0].InheritanceFlags -ne $rule.InheritanceFlags -or $rules[0].PropagationFlags -ne 'None')) { throw 'unexpected directory ACL' }
 }
 $root = $env:ENVLUME_ACL_ROOT
-foreach ($name in @('', 'data', 'logs', 'tmp', 'backups')) {
+$names = if ($env:ENVLUME_ACL_SCOPE -eq 'cli') { '', 'data', 'bin' } else { '', 'data', 'logs', 'tmp', 'backups' }
+foreach ($name in $names) {
     $path = if ($name) { [IO.Path]::Combine($root, $name) } else { $root }
     $dir = [IO.Directory]::CreateDirectory($path, $acl)
     Assert-Private $dir $true
@@ -24,4 +25,10 @@ foreach ($name in @('', 'data', 'logs', 'tmp', 'backups')) {
 foreach ($suffix in @('', '-wal', '-shm', '-journal')) {
     $file = [IO.FileInfo]::new([IO.Path]::Combine($root, 'data', ('envlume.db' + $suffix)))
     if ($file.Exists) { Assert-Private $file $false }
+}
+
+if ($env:ENVLUME_ACL_SCOPE -eq 'cli') {
+    foreach ($file in [IO.DirectoryInfo]::new([IO.Path]::Combine($root,'bin')).GetFiles()) {
+        Assert-Private $file $false
+    }
 }

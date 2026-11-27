@@ -40,11 +40,17 @@ impl StorePaths {
     pub fn backups(&self) -> PathBuf {
         self.root.join("backups")
     }
+    pub(crate) fn lock_cli_bin(&self) -> Result<(PathBuf, fs::File)> {
+        prepare_private(self.root(), false)?;
+        let lock = crate::schema::migration_lock(self)?;
+        prepare_private(self.root(), true)?;
+        Ok((self.root.join("bin"), lock))
+    }
     pub(crate) fn prepare(&self) -> Result<()> {
         if !self.root.is_absolute() {
             return Err(Error::PrivateDirectoryRequired);
         }
-        prepare_private(&self.root)?;
+        prepare_private(&self.root, false)?;
         for path in [
             self.database(),
             self.database().with_extension("db-wal"),
@@ -58,15 +64,19 @@ impl StorePaths {
 }
 
 #[cfg(unix)]
-fn prepare_private(root: &Path) -> Result<()> {
+fn prepare_private(root: &Path, cli: bool) -> Result<()> {
     use std::os::unix::fs::DirBuilderExt;
-    for dir in [
-        root.to_owned(),
-        root.join("data"),
-        root.join("logs"),
-        root.join("tmp"),
-        root.join("backups"),
-    ] {
+    let names: &[&str] = if cli {
+        &["", "data", "bin"]
+    } else {
+        &["", "data", "logs", "tmp", "backups"]
+    };
+    for name in names {
+        let dir = if name.is_empty() {
+            root.to_owned()
+        } else {
+            root.join(name)
+        };
         match fs::DirBuilder::new().mode(0o700).create(&dir) {
             Ok(()) => (),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
@@ -87,7 +97,7 @@ fn private(m: &fs::Metadata) -> bool {
 }
 
 #[cfg(windows)]
-fn prepare_private(root: &Path) -> Result<()> {
+fn prepare_private(root: &Path, cli: bool) -> Result<()> {
     use std::{
         os::windows::process::CommandExt,
         process::{Command, Stdio},
@@ -104,6 +114,7 @@ fn prepare_private(root: &Path) -> Result<()> {
                 include_str!("private-directories.ps1"),
             ])
             .env("ENVLUME_ACL_ROOT", root)
+            .env("ENVLUME_ACL_SCOPE", if cli { "cli" } else { "catalogue" })
             .creation_flags(0x08000000)
             .stdin(Stdio::null())
             .stdout(Stdio::null())

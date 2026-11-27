@@ -911,6 +911,7 @@ dependencies = [
  "envlume-storage",
  "rusqlite",
  "serde_json",
+ "sha2 0.10.9",
  "tauri",
  "tauri-build",
  "tempfile",
@@ -990,7 +991,10 @@ dependencies = [
  "envlume-workspace",
  "libc",
  "rusqlite",
+ "semver",
+ "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
 ]
 

@@ -5,8 +5,9 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build"
+    "features": ["bundled-cli"],
+    "beforeDevCommand": "node ../../scripts/stage-cli.mjs && pnpm dev",
+    "beforeBuildCommand": "node ../../scripts/stage-cli.mjs && pnpm build"
   },
   "app": {
     "windows": [{"label": "main", "title": "Envlume", "width": 800, "height": 540}],
