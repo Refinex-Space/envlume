@@ -77,6 +77,50 @@ impl Adapter for LocalAdapter {
                 cmd.env(key, v);
             }
         }
+        #[cfg(windows)]
+        {
+            // The native catalogue checks ACLs using the inbox Windows PowerShell.
+            // Supply the OS profile/CLR locations without inheriting client credentials,
+            // profile scripts, a user module search path or workspace executables.
+            for key in [
+                "SystemDrive",
+                "ProgramData",
+                "ALLUSERSPROFILE",
+                "PUBLIC",
+                "ProgramFiles",
+                "ProgramFiles(x86)",
+                "ProgramW6432",
+                "CommonProgramFiles",
+                "CommonProgramFiles(x86)",
+                "CommonProgramW6432",
+                "HOMEDRIVE",
+                "HOMEPATH",
+                "USERNAME",
+                "USERDOMAIN",
+                "COMPUTERNAME",
+                "PROCESSOR_ARCHITECTURE",
+                "NUMBER_OF_PROCESSORS",
+                "OS",
+            ] {
+                if let Some(value) = std::env::var_os(key) {
+                    cmd.env(key, value);
+                }
+            }
+            let windows = std::path::PathBuf::from(
+                std::env::var_os("SystemRoot").ok_or(Fault::VerificationFailed)?,
+            );
+            let system = windows.join("System32");
+            let powershell = system.join("WindowsPowerShell").join("v1.0");
+            cmd.env("WINDIR", &windows)
+                .env("ComSpec", system.join("cmd.exe"))
+                .env("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+                .env("PSModulePath", powershell.join("Modules"))
+                .env(
+                    "PATH",
+                    std::env::join_paths([system, powershell])
+                        .map_err(|_| Fault::VerificationFailed)?,
+                );
+        }
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
