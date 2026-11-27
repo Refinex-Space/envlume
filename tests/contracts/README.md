@@ -40,4 +40,8 @@ node --test tests/contracts/schemas.test.mjs
 cargo test --locked -p envlume-domain -p envlume-application
 ```
 
-这是首个契约版本，T01 的 `envlume --version` 输出保持兼容。T03 将实体映射到 SQLite；T04 先消费 `project_context`；T13 将八项工具接到实际用例。修改字段、错误码或能力映射时，同时更新 JSON Schema、正反样例、Rust 类型和消费者说明。变更已有接口兼容性时按架构 §20 记录 ADR、版本与旧消费者的迁移办法。
+这是首个契约版本，T01 的 `envlume --version` 输出保持兼容。T03 将实体映射到 SQLite；T04 先消费 `project_context`；T13 已将八项工具接到共用服务。修改字段、错误码或能力映射时，同时更新 JSON Schema、正反样例、Rust 类型和消费者说明。变更已有接口兼容性时按架构 §20 记录 ADR、版本与旧消费者的迁移办法。
+
+### 八项工具的真实服务验收
+
+在 macOS 上使用本机 Node、npm、Rust、Docker 和可用的 Keychain，运行 `python3 -B tests/contracts/live_mysql.py`。脚本启动仅监听回环的 MySQL 8.4、创建两个临时只读账号和工作区，调用真正的 CLI 分发器、STDIO 服务和任务子进程。测试宿主只向 CLI 指定临时存储目录。加 `--snapshot <新文件>` 可保存本轮脱敏样本；临时账号、凭据条目和 SQLite 库随测试清理。跨平台协议、授权回归与正式 CLI 的启动检查使用工作区测试和原生 CI。[端到端断言](../security/live-contracts.mjs)

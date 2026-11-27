@@ -58,7 +58,7 @@
 | [T10 接入系统凭据存储与损坏修复](tasks/T10-native-credentials.md) | 两个平台的凭据存储与引用生命周期 | T09 | 已完成 |
 | [T11 实现 MySQL 连接检测与元数据读取](tasks/T11-mysql-connect-schema.md) | TLS、只读账号、池隔离和 schema | T10 | 已完成 |
 | [T12 限制 MySQL 查询并脱敏结果](tasks/T12-mysql-read-query.md) | AST、行列/字节限额与脱敏 | T11 | 已完成 |
-| [T13 接齐八项 MCP 工具和 CLI 输出](tasks/T13-mcp-cli-contracts.md) | 八项工具、错误和 CLI 契约 | T12 | 待开始 |
+| [T13 接齐八项 MCP 工具和 CLI 输出](tasks/T13-mcp-cli-contracts.md) | 八项工具、错误和 CLI 契约 | T12 | 进行中 |
 | [R2 验收真实 MySQL 与授权隔离](tasks/R2-mysql-policy-review.md) | 双项目、双目标、双账号实测 | T13 | 待开始 |
 
 ### Phase 3 · v0.1 MVP
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| T13 待开始 | [T12-A01–A03](tasks/T12-mysql-read-query.md#执行记录) 已实测只读账号、递归列策略、脱敏、完整响应限额、超时与并发回收 | 使用同一绑定与隔离资源，核对八项 MCP 工具、CLI 输出与错误映射 | [T13 接齐八项 MCP 工具和 CLI 输出](tasks/T13-mcp-cli-contracts.md) |
+| T13 进行中 | [T13-A01/A02 与 A03 输出对照](tasks/T13-mcp-cli-contracts.md#执行记录) 已通过，八项工具共复核 44 个请求 | 完成本地历史查看和清理的授权校验，复跑过期及撤权回归 | [T13 接齐八项 MCP 工具和 CLI 输出](tasks/T13-mcp-cli-contracts.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 

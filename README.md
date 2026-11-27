@@ -4,7 +4,7 @@ A local-first environment gateway for AI coding agents.
 
 Envlume 面向同时维护多个项目的开发者。每个工作区可以分别指定本机工具链、可访问的环境资源，以及允许 AI 执行的构建和测试任务。目标是让 AI 知道当前项目该用哪个 JDK、能查哪个数据库，并让开发者拿到可以复核的执行结果。
 
-**当前可从源码启动桌面 Shell，并通过桌面命令和独立 CLI 读取本地 SQLite 项目目录。** CLI 可导入本地工作区、确认和撤销信任；独立 MCP 进程返回该绑定当前获准的项目摘要和工具链诊断。[查看交付进度](docs/plan/PLAN.md)
+**当前可从源码启动桌面 Shell，并通过桌面命令和独立 CLI 读取本地 SQLite 项目目录。** CLI 可导入本地工作区、确认和撤销信任；独立 MCP 进程按绑定授权提供项目与环境摘要、工具链诊断、具名任务和 MySQL 只读操作。[查看交付进度](docs/plan/PLAN.md)
 
 ## v0.1 的使用场景
 
@@ -205,6 +205,10 @@ envlume report show --evidence <evidence-id> --binding <binding-id> --json
 ```
 
 账号须直接获授 SELECT，使用无活动角色、无写入与转授权限的专用账号。SQL 从标准输入读取。MCP 使用相同的策略与 `database_query` 契约。遮蔽列可改名投影，筛选和排序仅接受可读列。未指定限额时采用 200 行、262144 字节、5000 毫秒；可调范围分别为 1–200、4096–262144、1–5000。结果的 `truncated` 表示达到行或字节限额，超时返回 `TIMEOUT`。变更查询策略后需要重新签发读取授权。[支持的 SQL 与策略](docs/architecture/adr/ADR-0015.md)
+
+### 核对 CLI 和 MCP 的调用结果
+
+在已登记的工作区根目录，`envlume project context --binding <id> --json` 返回与 MCP 的 `project_context` 相同的项目、目标和能力摘要。启动 `envlume mcp --binding <id>` 后，客户端可通过 `tools/list` 查看当前授权的工具。每次调用都有独立的 `requestId`。成功运行任务、检测连接或查询数据时，用返回的 `evidenceId` 在本地复查。CLI 和 MCP 各自执行一次操作时会生成不同的编号。[八项工具、退出码与实测记录](docs/plan/tasks/T13-mcp-cli-contracts.md)
 
 ### 构建与验证
 

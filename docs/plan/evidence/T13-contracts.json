@@ -1,0 +1,510 @@
+{
+  "protocol": [
+    {
+      "initialize": {
+        "protocolVersion": "2025-11-25",
+        "capabilities": {
+          "tools": {}
+        },
+        "serverInfo": {
+          "name": "envlume",
+          "version": "0.1.0-dev.1"
+        }
+      },
+      "tools": [
+        "project_context",
+        "environment_list",
+        "toolchain_doctor",
+        "task_list",
+        "task_run",
+        "connection_test",
+        "database_query",
+        "database_schema"
+      ]
+    },
+    {
+      "tool": "project_context",
+      "arguments": {},
+      "mcp": {
+        "bindingAlias": "ws-workspace-3fd4771f6e3e40cabeae7d2227c3e591",
+        "capability": "project.inspect",
+        "durationMs": 1,
+        "ok": true,
+        "operation": "project_context",
+        "requestId": "68164c6e-79e7-47eb-862d-c9ffc53c25cc",
+        "result": {
+          "capabilities": [
+            "database.read:6d24c1fa-23ac-47ac-a448-4480841036a2",
+            "database.read:ea009325-9e01-41f0-ba0b-6bd983412d6e",
+            "database.schema:06c63a08-bdcf-429f-9135-a808326d1de7",
+            "database.schema:bfb34668-68b9-46f2-8cda-b4898132cf04",
+            "environment.inspect",
+            "project.inspect",
+            "resource.connect:06c63a08-bdcf-429f-9135-a808326d1de7",
+            "resource.connect:3dbc8b80-3030-4578-8d97-2b7d44bd2d40",
+            "resource.connect:5904aabf-c8e6-4777-a170-0ca4b2a39655",
+            "resource.connect:6d24c1fa-23ac-47ac-a448-4480841036a2",
+            "resource.connect:7a4fd3a9-b880-418e-bcfc-aee1a5d2c971",
+            "resource.connect:80d05413-7ec4-45b7-b353-107c5a5510d4",
+            "resource.connect:ab720308-0ef4-4b96-98b8-d9bce8d31448",
+            "resource.connect:b5bc5ddb-2d68-45e2-afe6-fc767f3a23a2",
+            "resource.connect:ba7e0ba2-047e-44a9-b958-941865308d81",
+            "resource.connect:bfb34668-68b9-46f2-8cda-b4898132cf04",
+            "resource.connect:ea009325-9e01-41f0-ba0b-6bd983412d6e",
+            "task.inspect",
+            "task.run:94d7c86f-2b80-4fd3-88c0-a013775abf52",
+            "toolchain.inspect"
+          ],
+          "project": "workspace",
+          "targets": [
+            "dev",
+            "test"
+          ],
+          "workspace": "ws-workspace-3fd4771f6e3e40cabeae7d2227c3e591"
+        },
+        "schemaVersion": 1,
+        "status": "success",
+        "summary": "Completed",
+        "timestampUtc": "2026-11-27T09:12:37.836385Z"
+      },
+      "cli": {
+        "requestId": "bce50fcd-c761-4a68-a368-ee3aa2fb3a11",
+        "status": "success"
+      }
+    },
+    {
+      "tool": "environment_list",
+      "arguments": {},
+      "mcp": {
+        "bindingAlias": "ws-workspace-3fd4771f6e3e40cabeae7d2227c3e591",
+        "capability": "environment.inspect",
+        "durationMs": 1,
+        "ok": true,
+        "operation": "environment_list",
+        "requestId": "5d09d8e1-f689-49ac-9c0f-928fb9f58367",
+        "result": {
+          "environments": [
+            {
+              "resources": [
+                {
+                  "alias": "bad-cert",
+                  "health": "unknown"
+                },
+                {
+                  "alias": "bad-login",
+                  "health": "unknown"
+                },
+                {
+                  "alias": "dns-fail",
+                  "health": "unknown"
+                },
+                {
+                  "alias": "hung",
+                  "health": "unknown"
+                },
+                {
+                  "alias": "offline",
+                  "health": "unknown"
+                },
+                {
+                  "alias": "primary-db",
+                  "health": "unknown"
+                },
+                {
+                  "alias": "query-db",
+                  "health": "unknown"
+                },
+                {
+                  "alias": "unapproved",
+                  "health": "unknown"
+                },
+                {
+                  "alias": "wrong-name",
+                  "health": "unknown"
+                }
+              ],
+              "target": "dev"
+            },
+            {
+              "resources": [
+                {
+                  "alias": "primary-db",
+                  "health": "unknown"
+                },
+                {
+                  "alias": "query-db",
+                  "health": "unknown"
+                }
+              ],
+              "target": "test"
+            }
+          ]
+        },
+        "schemaVersion": 1,
+        "status": "success",
+        "summary": "Completed",
+        "timestampUtc": "2026-11-27T09:12:37.883364Z"
+      },
+      "cli": {
+        "requestId": "1d46266c-e62d-4930-9b81-4db5e332ead0",
+        "status": "success"
+      }
+    },
+    {
+      "tool": "toolchain_doctor",
+      "arguments": {
+        "profile": "default"
+      },
+      "mcp": {
+        "bindingAlias": "ws-workspace-3fd4771f6e3e40cabeae7d2227c3e591",
+        "capability": "toolchain.inspect",
+        "durationMs": 122,
+        "ok": true,
+        "operation": "toolchain_doctor",
+        "requestId": "2b4b32c8-0790-4e2f-a293-4eda463db82f",
+        "result": {
+          "tools": [
+            {
+              "pathSummary": "selected-home; constraint * (host); available; <jdk-home>/bin/java; vendor Temurin; arch arm64; java 25.0.5; javac 25.0.5",
+              "repair": null,
+              "tool": "jdk",
+              "version": "25.0.5"
+            },
+            {
+              "pathSummary": "selected-home; constraint * (host); available; <maven-home>/bin/mvn; paired JDK 25.0.5; user settings absent; installation settings configured",
+              "repair": null,
+              "tool": "maven",
+              "version": "3.9.12"
+            },
+            {
+              "pathSummary": "host; constraint * (host); missing",
+              "repair": "Select an installed local executable or install the required tool and refresh.",
+              "tool": "gradle",
+              "version": null
+            },
+            {
+              "pathSummary": "explicit; constraint * (explicit); available; <installation>/node",
+              "repair": null,
+              "tool": "node",
+              "version": "24.14.1"
+            },
+            {
+              "pathSummary": "search-path; constraint * (host); available; <installation>/npm; lockfile: npm; packageManager: unspecified",
+              "repair": null,
+              "tool": "npm",
+              "version": "11.11.0"
+            },
+            {
+              "pathSummary": "search-path; constraint * (host); available; <installation>/pnpm",
+              "repair": null,
+              "tool": "pnpm",
+              "version": "10.33.0"
+            },
+            {
+              "pathSummary": "search-path; constraint * (host); available; <installation>/yarn",
+              "repair": null,
+              "tool": "yarn",
+              "version": "1.22.22"
+            },
+            {
+              "pathSummary": "search-path; constraint * (host); available; <installation>/python3",
+              "repair": null,
+              "tool": "python",
+              "version": "3.14.6"
+            },
+            {
+              "pathSummary": "search-path; constraint * (host); available; <installation>/uv",
+              "repair": null,
+              "tool": "uv",
+              "version": "0.11.3"
+            },
+            {
+              "pathSummary": "search-path; constraint * (host); available; <installation>/git; workspace: none; remote: not inspected",
+              "repair": null,
+              "tool": "git",
+              "version": "2.52.0"
+            },
+            {
+              "pathSummary": "selected-home; constraint * (host); available; <installation>/rustc",
+              "repair": null,
+              "tool": "rustc",
+              "version": "1.99.1"
+            },
+            {
+              "pathSummary": "selected-home; constraint * (host); available; <installation>/cargo",
+              "repair": null,
+              "tool": "cargo",
+              "version": "1.99.1"
+            },
+            {
+              "pathSummary": "search-path; constraint * (host); present; <installation>/docker",
+              "repair": null,
+              "tool": "docker",
+              "version": null
+            },
+            {
+              "pathSummary": "host; constraint * (host); missing",
+              "repair": "Select an installed local executable or install the required tool and refresh.",
+              "tool": "mise",
+              "version": null
+            }
+          ]
+        },
+        "schemaVersion": 1,
+        "status": "success",
+        "summary": "Completed",
+        "timestampUtc": "2026-11-27T09:12:37.927882Z"
+      },
+      "cli": {
+        "requestId": "232de8f4-aec4-42cc-95b6-89ba4c52d1bf",
+        "status": "success"
+      }
+    },
+    {
+      "tool": "task_list",
+      "arguments": {},
+      "mcp": {
+        "bindingAlias": "ws-workspace-3fd4771f6e3e40cabeae7d2227c3e591",
+        "capability": "task.inspect",
+        "durationMs": 1,
+        "ok": true,
+        "operation": "task_list",
+        "requestId": "2516a142-ed53-423d-a720-3d000c2f037b",
+        "result": {
+          "tasks": [
+            {
+              "taskId": "node-build",
+              "timeoutSeconds": 600
+            }
+          ]
+        },
+        "schemaVersion": 1,
+        "status": "success",
+        "summary": "Completed",
+        "timestampUtc": "2026-11-27T09:12:38.207087Z"
+      },
+      "cli": {
+        "requestId": "1a4a6f83-1fab-4539-b80c-07ce5029ecd5",
+        "status": "success"
+      }
+    },
+    {
+      "tool": "task_run",
+      "arguments": {
+        "taskId": "node-build"
+      },
+      "mcp": {
+        "bindingAlias": "ws-workspace-3fd4771f6e3e40cabeae7d2227c3e591",
+        "capability": "task.run:94d7c86f-2b80-4fd3-88c0-a013775abf52",
+        "durationMs": 272,
+        "evidenceId": "8a3f3864-628c-4821-bba1-cc74ae1fd12d",
+        "ok": true,
+        "operation": "task_run",
+        "requestId": "f241d2f1-bc8d-42aa-b2e9-6e343bcc4407",
+        "result": {
+          "exitCode": 0,
+          "stderrSummary": "0 bytes",
+          "stdoutSummary": "91 bytes"
+        },
+        "schemaVersion": 1,
+        "status": "success",
+        "summary": "Build passed (node=24.14.1, npm=11.11.0)",
+        "timestampUtc": "2026-11-27T09:12:38.260847Z"
+      },
+      "cli": {
+        "requestId": "3c8209d6-bd1d-48bf-a0c0-00be47ee2d5a",
+        "evidenceId": "66f52c4c-dd57-496d-8900-d050a7260d3a",
+        "status": "success"
+      }
+    },
+    {
+      "tool": "connection_test",
+      "arguments": {
+        "target": "dev",
+        "resource": "primary-db"
+      },
+      "mcp": {
+        "bindingAlias": "ws-workspace-3fd4771f6e3e40cabeae7d2227c3e591",
+        "capability": "resource.connect:bfb34668-68b9-46f2-8cda-b4898132cf04",
+        "durationMs": 101,
+        "evidenceId": "20d63d1f-dd46-4452-b89b-de88a46ae4fe",
+        "ok": true,
+        "operation": "connection_test",
+        "requestId": "6d16099f-0892-4f03-9e65-22112847c77a",
+        "result": {
+          "latencyMs": 97,
+          "versionSummary": "MySQL 8.4.11"
+        },
+        "schemaVersion": 1,
+        "status": "success",
+        "summary": "Completed",
+        "targetAlias": "dev",
+        "timestampUtc": "2026-11-27T09:12:39.182497Z"
+      },
+      "cli": {
+        "requestId": "ae750931-cdc6-4e87-8234-e5159481bfa9",
+        "evidenceId": "8cf62607-533a-45fa-8190-21ef869eb0f3",
+        "status": "success"
+      }
+    },
+    {
+      "tool": "database_schema",
+      "arguments": {
+        "target": "dev",
+        "resource": "primary-db"
+      },
+      "mcp": {
+        "bindingAlias": "ws-workspace-3fd4771f6e3e40cabeae7d2227c3e591",
+        "capability": "database.schema:bfb34668-68b9-46f2-8cda-b4898132cf04",
+        "durationMs": 38,
+        "ok": true,
+        "operation": "database_schema",
+        "requestId": "28758b3d-f35b-4e11-82cc-6207ab020313",
+        "result": {
+          "tables": [
+            {
+              "columns": [
+                {
+                  "name": "id",
+                  "nullable": false,
+                  "type": "bigint"
+                },
+                {
+                  "name": "name",
+                  "nullable": true,
+                  "type": "varchar"
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "id"
+                  ],
+                  "name": "PRIMARY"
+                },
+                {
+                  "columns": [
+                    "name"
+                  ],
+                  "name": "name_idx"
+                }
+              ],
+              "table": "dev_marker"
+            }
+          ]
+        },
+        "schemaVersion": 1,
+        "status": "success",
+        "summary": "Completed",
+        "targetAlias": "dev",
+        "timestampUtc": "2026-11-27T09:12:39.436674Z"
+      },
+      "cli": {
+        "requestId": "52d80a47-e1be-4857-a222-3574a58fd344",
+        "status": "success"
+      }
+    },
+    {
+      "tool": "database_query",
+      "arguments": {
+        "target": "dev",
+        "resource": "query-db",
+        "sql": "SELECT name,payload FROM dev_marker WHERE id = 1"
+      },
+      "mcp": {
+        "bindingAlias": "ws-workspace-3fd4771f6e3e40cabeae7d2227c3e591",
+        "capability": "database.read:ea009325-9e01-41f0-ba0b-6bd983412d6e",
+        "durationMs": 28,
+        "evidenceId": "182ca427-4186-4aec-8978-53e7e4e8912e",
+        "ok": true,
+        "operation": "database_query",
+        "requestId": "0938d9a2-42b4-4f8b-a4b4-3fe6072b56ea",
+        "result": {
+          "columns": [
+            "name",
+            "payload"
+          ],
+          "rows": [
+            [
+              "[REDACTED]",
+              "fixture text: request another tool"
+            ]
+          ],
+          "truncated": false
+        },
+        "schemaVersion": 1,
+        "status": "success",
+        "summary": "Completed",
+        "targetAlias": "dev",
+        "timestampUtc": "2026-11-27T09:12:39.640383Z"
+      },
+      "cli": {
+        "requestId": "53b1e5e9-2c99-438f-a525-cdd540f9fac6",
+        "evidenceId": "cdcf8852-79d1-4c6b-8941-a9a12bf4fed9",
+        "status": "success"
+      }
+    },
+    {
+      "modern": [
+        "2024-11-05",
+        "2025-03-26",
+        "2025-06-18",
+        "2025-11-25",
+        "2026-07-28"
+      ],
+      "versionError": -32022
+    }
+  ],
+  "exitCodes": {
+    "0": {
+      "status": "success",
+      "operation": "database_query"
+    },
+    "2": {
+      "errorCode": "INVALID_INPUT",
+      "operation": "database_query",
+      "status": "failed",
+      "requestId": "94030685-bb72-4b9c-93cf-82b735f85dbc"
+    },
+    "3": {
+      "errorCode": "POLICY_DENIED",
+      "operation": "database_query",
+      "status": "denied",
+      "requestId": "4f6b3834-1834-40d9-9e4b-2a4435ad93f9"
+    },
+    "4": {
+      "errorCode": "TOOLCHAIN_MISSING",
+      "operation": "task_run",
+      "status": "failed",
+      "requestId": "d7e7bab2-6797-48dc-813c-c9865c63168c"
+    },
+    "5": {
+      "errorCode": "NETWORK_UNREACHABLE",
+      "operation": "connection_test",
+      "status": "failed",
+      "requestId": "8b6d6c80-4a10-447c-b406-221a1afee688"
+    },
+    "6": {
+      "errorCode": "TIMEOUT",
+      "operation": "connection_test",
+      "status": "failed",
+      "requestId": "772edf3a-5b56-4864-b812-49feef40daff"
+    },
+    "7": {
+      "errorCode": "INTERNAL_ERROR",
+      "operation": "task_run",
+      "status": "failed",
+      "requestId": "92eac8e4-0bbc-4c7f-89dc-dd2661b80760"
+    }
+  },
+  "diagnosticLayers": [
+    "host",
+    "network",
+    "policy",
+    "service",
+    "toolchain",
+    "workflow",
+    "workspace"
+  ],
+  "auditedRequests": 44
+}
