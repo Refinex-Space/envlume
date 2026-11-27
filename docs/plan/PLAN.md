@@ -59,7 +59,7 @@
 | [T11 实现 MySQL 连接检测与元数据读取](tasks/T11-mysql-connect-schema.md) | TLS、只读账号、池隔离和 schema | T10 | 已完成 |
 | [T12 限制 MySQL 查询并脱敏结果](tasks/T12-mysql-read-query.md) | AST、行列/字节限额与脱敏 | T11 | 已完成 |
 | [T13 接齐八项 MCP 工具和 CLI 输出](tasks/T13-mcp-cli-contracts.md) | 八项工具、错误和 CLI 契约 | T12 | 已完成 |
-| [R2 验收真实 MySQL 与授权隔离](tasks/R2-mysql-policy-review.md) | 双项目、双目标、双账号实测 | T13 | 待开始 |
+| [R2 验收真实 MySQL 与授权隔离](tasks/R2-mysql-policy-review.md) | 双项目、双目标、双账号实测 | T13 | 已完成 |
 
 ### Phase 3 · v0.1 MVP
 
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| R2 待开始 | [T13-A01–A03](tasks/T13-mcp-cli-contracts.md#执行记录) 已验证八工具、七种退出码及绑定级历史访问 | 用双项目、双目标和双账号复跑真实 MySQL 与授权隔离 | [R2 验收真实 MySQL 与授权隔离](tasks/R2-mysql-policy-review.md) |
+| T14 待开始 | [R2-A01–A03](tasks/R2-mysql-policy-review.md#执行记录) 已验收真实只读身份、跨项目拒绝、三个入口的授权结果及并发回收 | 建立可独立定位和升级的 CLI | [T14 交付可独立定位和升级的 CLI](tasks/T14-stable-cli.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 

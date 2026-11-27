@@ -1,0 +1,75 @@
+{
+  "fixtureRevision": "f946042",
+  "driver": "mysql_async 0.37.1",
+  "denied": {
+    "A_B_only": "TARGET_NOT_ALLOWED",
+    "A_TEST": "POLICY_DENIED",
+    "B_DEV": "POLICY_DENIED",
+    "implicit_target": "INVALID_INPUT",
+    "PROD_connect": "TARGET_NOT_ALLOWED",
+    "PROD_schema": "TARGET_NOT_ALLOWED",
+    "PROD_query": "TARGET_NOT_ALLOWED",
+    "PROD_write": "TARGET_NOT_ALLOWED",
+    "caller_binding": "INVALID_INPUT",
+    "cross_schema": "QUERY_NOT_ALLOWED",
+    "write": "QUERY_NOT_ALLOWED"
+  },
+  "denialCounterDeltas": {
+    "devConnections": 0,
+    "testConnections": 0,
+    "devStatements": 0,
+    "testStatements": 0
+  },
+  "concurrentRecords": [
+    {
+      "requestId": "52ffed5b-5747-453a-b1ee-2ff1e0aa38f0",
+      "evidenceId": "ba0036df-90ad-43c4-8ee4-1e33ff615ba1",
+      "bindingId": "d4ea0fed-5bc8-48df-81f9-cc10d6e4edd2",
+      "projectId": "c8b82438-003a-48ac-89af-e7e0c8c67503",
+      "resourceId": "dff708f8-bdc5-41da-a4de-a929aeae887f",
+      "targetId": "c2e67434-f79d-4205-98c9-0f1cd3e7afa2",
+      "actor": "LOCAL_STDIO"
+    },
+    {
+      "requestId": "25e04700-a74f-45c0-9945-e01da1e619ad",
+      "evidenceId": "41dd0e38-fed4-4f02-b6a2-d4144dba88d6",
+      "bindingId": "ddcd60a3-aba9-4153-8624-448e1b880fa3",
+      "projectId": "30a84b6e-0f17-4cc5-a95f-ba5deed76243",
+      "resourceId": "01a3b05b-8b51-4ad1-a1f8-1abf1114f523",
+      "targetId": "6abf7241-676a-491c-ba52-7542614b846b",
+      "actor": "LOCAL_STDIO"
+    },
+    {
+      "requestId": "400895fd-7a02-42d0-a5e6-a5e402aade5d",
+      "evidenceId": "c0a11aa2-a06f-4c84-8a45-f8db4f18d41b",
+      "bindingId": "d4ea0fed-5bc8-48df-81f9-cc10d6e4edd2",
+      "projectId": "c8b82438-003a-48ac-89af-e7e0c8c67503",
+      "resourceId": "dff708f8-bdc5-41da-a4de-a929aeae887f",
+      "targetId": "c2e67434-f79d-4205-98c9-0f1cd3e7afa2",
+      "actor": "CLI"
+    }
+  ],
+  "timeoutMs": 5009,
+  "cleanup": {
+    "mysqlSessions": 0,
+    "taskPidsReaped": 2,
+    "taskSlotReused": true
+  },
+  "mysql": "8.4.11",
+  "platform": "26.5.2",
+  "architecture": "arm64",
+  "scanBytes": {
+    "MCP stdout": 35253,
+    "CLI stderr": 182,
+    "CLI stdout": 17458,
+    "MCP stderr": 309,
+    "SQLite": 212992,
+    "WAL": 984712,
+    "online backup": 249856,
+    "local logs": 4831,
+    "provisioner stderr": 0,
+    "provisioner stdout": 0
+  },
+  "sqlAccountGrants": "USAGE and table SELECT only; direct INSERT and cross-database SELECT denied (1142)",
+  "observedConcurrentWaiters": 3
+}
