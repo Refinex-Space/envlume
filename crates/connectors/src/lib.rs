@@ -28,6 +28,15 @@ impl DatabaseBackend for Registry {
     fn kind(&self) -> ResourceKind {
         ResourceKind::MySql
     }
+    fn capabilities(&self) -> &'static [envlume_application::environments::RemoteAction] {
+        self.mysql.capabilities()
+    }
+    fn query(
+        &self,
+        q: &envlume_application::remote::AuthorizedQuery<'_>,
+    ) -> Result<envlume_application::result::QueryResult, RemoteFault> {
+        self.select(q.resource())?.query(q)
+    }
     fn test(&self, r: &AuthorizedResource<'_>) -> Result<ConnectionResult, RemoteFault> {
         self.select(r)?.test(r)
     }

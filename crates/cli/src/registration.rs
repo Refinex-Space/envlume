@@ -51,12 +51,13 @@ impl BoundProject for Tasks {
     fn environments(&self, args: Value) -> Option<Report> {
         Some(Tasks::environments(self, args))
     }
-    fn remote_visibility(&self) -> Result<(bool, bool), ErrorCode> {
+    fn remote_visibility(&self) -> Result<(bool, bool, bool), ErrorCode> {
         Tasks::remote_visibility(self)
     }
     fn remote(&self, name: &str, args: Value) -> Option<Report> {
         match name {
             "connection_test" => Some(self.database("connection_test", args)),
+            "database_query" => Some(self.database("database_query", args)),
             "database_schema" => Some(self.database("database_schema", args)),
             _ => None,
         }

@@ -1,4 +1,5 @@
 mod metadata;
+mod query;
 
 use envlume_application::{
     ErrorCode,
@@ -146,7 +147,7 @@ impl<L: Logins> MySqlConnector<L> {
         entry.touched = Instant::now();
         Ok(entry.pool.get_or_insert_with(|| Pool::new(options)).clone())
     }
-    fn mark(&self, key: PoolIdentity, r: &ResourceBinding, ok: bool) {
+    fn mark(&self, key: PoolIdentity, r: &ResourceBinding, ok: bool, retire_pool: bool) {
         if let Ok(mut slots) = self.slots.lock() {
             if self.inflight.is_closed() {
                 return;
@@ -171,7 +172,7 @@ impl<L: Logins> MySqlConnector<L> {
             if entry.resource == *r {
                 entry.touched = Instant::now();
                 entry.healthy = Some(ok);
-                if !ok && let Some(pool) = entry.pool.take() {
+                if retire_pool && let Some(pool) = entry.pool.take() {
                     retire(pool);
                 }
             }
@@ -190,7 +191,13 @@ impl<L: Logins> MySqlConnector<L> {
         mysql_policy::validate(r, route, &r.tables).map_err(|_| Fault::Address)?;
         let database = r.database.as_ref().ok_or(Fault::Address)?;
         let rt = runtime()?;
-        let end = Deadline::now() + BUDGET;
+        let budget = if action == RemoteAction::Read {
+            Duration::from_millis(r.query_policy.as_ref().ok_or(Fault::Privileges)?.timeout_ms)
+                .min(BUDGET)
+        } else {
+            BUDGET
+        };
+        let end = Deadline::now() + budget;
         let result = (|| {
             let ips = rt.block_on(async {
                 let resolved = timeout_at(end, tokio::net::lookup_host((r.host.as_str(), r.port)))
@@ -244,18 +251,33 @@ impl<L: Logins> MySqlConnector<L> {
                 }
                 auth.binding().map_err(Fault::Access)?;
                 let pool = self.pool(key, r, ips, options)?;
-                timeout_at(end, async {
-                    let mut conn = pool.get_conn().await.map_err(classify)?;
-                    auth.binding().map_err(Fault::Access)?;
-                    let value = op(&mut conn, r).await?;
-                    auth.binding().map_err(Fault::Access)?;
-                    Ok(value)
-                })
-                .await
-                .map_err(|_| Fault::Timeout)?
+                let mut conn = timeout_at(end, pool.get_conn())
+                    .await
+                    .map_err(|_| Fault::Timeout)?
+                    .map_err(classify)?;
+                auth.binding().map_err(Fault::Access)?;
+                let result = timeout_at(end, op(&mut conn, r))
+                    .await
+                    .map_err(|_| Fault::Timeout)
+                    .and_then(|v| v);
+                if action == RemoteAction::Read {
+                    // Dispose of the query connection even when a byte limit leaves unread rows.
+                    // disconnect marks it unusable before its first await; bound any protocol drain.
+                    let _ = timeout(Duration::from_millis(10), conn.disconnect()).await;
+                }
+                let value = result?;
+                auth.binding().map_err(Fault::Access)?;
+                Ok(value)
             })
         })();
-        self.mark(key, r, result.is_ok());
+        // Query connections are disposed individually. Retiring their shared queue
+        // on one deadline would turn other waiters' deadlines into driver errors.
+        self.mark(
+            key,
+            r,
+            result.is_ok(),
+            result.is_err() && action != RemoteAction::Read,
+        );
         result
     }
 }
@@ -303,6 +325,7 @@ fn classify(error: Driver) -> Fault {
         Driver::Io(IoError::Io(e)) if e.kind() == std::io::ErrorKind::InvalidData => Fault::Service,
         Driver::Io(IoError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut => Fault::Timeout,
         Driver::Io(_) => Fault::Tcp,
+        Driver::Server(e) if matches!(e.code, 1205 | 3024) => Fault::Timeout,
         Driver::Server(e) if e.code == 1045 => Fault::Authentication,
         Driver::Server(e) if matches!(e.code, 1044 | 1142 | 1143) => Fault::Privileges,
         Driver::Driver(DriverError::CantParseServerVersion { .. }) => Fault::Version,
@@ -313,6 +336,27 @@ fn classify(error: Driver) -> Fault {
 impl<L: Logins> DatabaseBackend for MySqlConnector<L> {
     fn kind(&self) -> ResourceKind {
         ResourceKind::MySql
+    }
+    fn capabilities(&self) -> &'static [RemoteAction] {
+        &[
+            RemoteAction::Connect,
+            RemoteAction::Schema,
+            RemoteAction::Read,
+        ]
+    }
+    fn query(
+        &self,
+        q: &envlume_application::remote::AuthorizedQuery<'_>,
+    ) -> Result<envlume_application::result::QueryResult, Fault> {
+        self.perform(q.resource(), RemoteAction::Read, async |conn, r| {
+            query::read(
+                conn,
+                q.plan(),
+                r.query_policy.as_ref().ok_or(Fault::Privileges)?,
+                || q.resource().binding().map(|_| ()).map_err(Fault::Access),
+            )
+            .await
+        })
     }
     fn test(&self, r: &AuthorizedResource<'_>) -> Result<ConnectionResult, Fault> {
         let start = Instant::now();

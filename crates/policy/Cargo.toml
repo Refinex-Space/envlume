@@ -7,3 +7,4 @@ publish.workspace = true
 
 [dependencies]
 envlume-domain.workspace = true
+sqlparser = { version = "=0.64.0", default-features = false, features = ["std"] }

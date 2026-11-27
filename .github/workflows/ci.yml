@@ -86,7 +86,7 @@ jobs:
       - run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml apps/desktop/src-tauri/Cargo.toml
 
   mysql:
-    name: Live MySQL 8.4 TLS and metadata
+    name: Live MySQL 8.4 TLS, metadata and bounded queries
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

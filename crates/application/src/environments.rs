@@ -122,6 +122,11 @@ pub enum Edit {
         alias: Alias,
         endpoint: Endpoint,
     },
+    QueryPolicy {
+        target: Alias,
+        alias: Alias,
+        policy: QueryPolicy,
+    },
     MySqlPolicy {
         target: Alias,
         alias: Alias,
@@ -159,7 +164,8 @@ impl Edit {
     fn selectors(&self) -> (&Alias, Option<&Alias>) {
         match self {
             Self::Target { alias, .. } | Self::Rename { alias, .. } => (alias, None),
-            Self::MySqlPolicy { target, alias, .. }
+            Self::QueryPolicy { target, alias, .. }
+            | Self::MySqlPolicy { target, alias, .. }
             | Self::Resource { target, alias, .. }
             | Self::Grant { target, alias, .. }
             | Self::Revoke { target, alias, .. } => (target, Some(alias)),
@@ -218,6 +224,16 @@ impl Reviewed {
                         t.project_id == state.project.id && t.alias == *to && &t.alias != alias
                     })
                 {
+                    return Err(ErrorCode::InvalidInput);
+                }
+            }
+            Edit::QueryPolicy { policy, .. } => {
+                let r = resource
+                    .filter(|r| {
+                        r.endpoint_confirmed && r.route.is_some() && r.status == Status::Active
+                    })
+                    .ok_or(ErrorCode::TargetNotAllowed)?;
+                if !policy.valid_for(&r.tables) {
                     return Err(ErrorCode::InvalidInput);
                 }
             }
@@ -344,6 +360,9 @@ pub fn manage(
         Edit::Target { kind, risk, .. } => format!(
             "Set target kind={kind:?} risk={risk:?}. Classification changes revoke its remote grants."
         ),
+        Edit::QueryPolicy { policy, .. } => format!(
+            "Approve MySQL query policy {policy:?}. Changes revoke database.read for every binding of this resource."
+        ),
         Edit::Rename { to, .. } => format!("Rename target to {}.", to.as_str()),
         Edit::MySqlPolicy { route, tables, .. } => {
             let r = reviewed
@@ -379,6 +398,16 @@ pub fn manage(
                 .ok_or(ErrorCode::TargetNotAllowed)?;
             let endpoint = Endpoint::from_resource(r);
             match &edit {
+                Edit::Grant {
+                    expires_at,
+                    action: RemoteAction::Read,
+                    ..
+                } => format!(
+                    "Grant environment.inspect and database.read for {}, expiry {}. Approved query policy: {:?}.",
+                    endpoint.display(),
+                    expires_at.map_or("none".to_owned(), |v| v.to_string()),
+                    r.query_policy
+                ),
                 Edit::Grant { expires_at, .. } => format!(
                     "Grant environment.inspect and {} for {}, expiry {}.",
                     action.name(),

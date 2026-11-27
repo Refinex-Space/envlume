@@ -1,4 +1,5 @@
 //! Mandatory v0.1 ceiling, shared by grant issuance, discovery and dispatch.
+pub mod query;
 use envlume_domain::{
     Capability, EnvironmentKind, EnvironmentTarget, ResourceBinding, ResourceScope, RiskLevel,
     Status,

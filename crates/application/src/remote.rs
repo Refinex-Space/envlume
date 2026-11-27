@@ -1,4 +1,4 @@
-//! Typed operations expose only metadata. The connection driver never receives a caller SQL string.
+//! Typed operations expose approved database reads. The connection driver never receives a caller SQL string.
 use crate::{
     ErrorCode,
     input::TableName,
@@ -60,14 +60,29 @@ impl RemoteFault {
             }
             Self::Privileges => "Check the MySQL read-only grants for this database.",
             Self::Service => {
-                "MySQL did not complete the metadata operation. Check service health and grants."
+                "MySQL did not complete the database operation. Check service health and grants."
             }
             Self::Timeout => "MySQL operation exceeded its deadline.",
-            Self::Limit => "Metadata exceeds the local response limit. Narrow the table scope.",
+            Self::Limit => {
+                "The result exceeds local limits or contains unsupported data. Narrow the projection."
+            }
             Self::Busy => {
                 "The local connection pool limit was reached. Retry after current operations finish."
             }
         }
+    }
+}
+pub use envlume_policy::query::{Parameter, ReadQuery};
+pub struct AuthorizedQuery<'a> {
+    pub(crate) resource: &'a AuthorizedResource<'a>,
+    pub(crate) plan: ReadQuery,
+}
+impl<'a> AuthorizedQuery<'a> {
+    pub fn resource(&self) -> &AuthorizedResource<'a> {
+        self.resource
+    }
+    pub fn plan(&self) -> &ReadQuery {
+        &self.plan
     }
 }
 pub trait DatabaseBackend: Send + Sync {
@@ -82,6 +97,9 @@ pub trait DatabaseBackend: Send + Sync {
         r: &AuthorizedResource<'_>,
         table: Option<&TableName>,
     ) -> Result<Vec<Table>, RemoteFault>;
+    fn query(&self, _: &AuthorizedQuery<'_>) -> Result<crate::result::QueryResult, RemoteFault> {
+        Err(RemoteFault::Access(ErrorCode::QueryNotAllowed))
+    }
     fn retain(&self, live: &dyn Fn(PoolIdentity, &ResourceBinding) -> bool);
     fn health(&self, binding: BindingId, resource: ResourceId) -> Health;
     fn close(&self) -> Result<(), RemoteFault>;

@@ -113,6 +113,20 @@ fn main() -> std::process::ExitCode {
     review();
     std::process::ExitCode::SUCCESS
 }
+fn query_policy(target: &str) -> QueryPolicy {
+    QueryPolicy {
+        tables: BTreeMap::from([(
+            format!("{target}_marker"),
+            QueryColumns {
+                readable: ["id", "payload"].map(str::to_owned).into(),
+                masked: ["name"].map(str::to_owned).into(),
+            },
+        )]),
+        max_rows: if target == "dev" { 200 } else { 7 },
+        max_bytes: if target == "dev" { 262144 } else { 8192 },
+        timeout_ms: if target == "dev" { 5000 } else { 1500 },
+    }
+}
 fn review() {
     let input = std::io::stdin();
     let mut lines = input.lock().lines();
@@ -147,6 +161,7 @@ fn review() {
         let database = format!("orders_{target}");
         for resource in [
             "primary-db",
+            "query-db",
             "unapproved",
             "bad-cert",
             "wrong-name",
@@ -155,7 +170,7 @@ fn review() {
             "bad-login",
             "dns-fail",
         ] {
-            if target == "test" && resource != "primary-db" {
+            if target == "test" && !matches!(resource, "primary-db" | "query-db") {
                 continue;
             }
             let host = match resource {
@@ -192,7 +207,14 @@ fn review() {
             let tables = BTreeMap::from([(
                 marker.clone(),
                 MySqlTable {
-                    columns: ["id", "name"].into_iter().map(str::to_owned).collect(),
+                    columns: if resource == "query-db" {
+                        vec!["id", "name", "payload"]
+                    } else {
+                        vec!["id", "name"]
+                    }
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
                     indexes: ["PRIMARY", "name_idx", "mixed_idx"]
                         .into_iter()
                         .map(str::to_owned)
@@ -205,6 +227,14 @@ fn review() {
                 route,
                 tables,
             });
+            if resource == "query-db" {
+                fixture.edit(Edit::QueryPolicy {
+                    target: alias(target),
+                    alias: alias(resource),
+                    policy: query_policy(target),
+                });
+                fixture.grant(target, resource, RemoteAction::Read);
+            }
             let selection =
                 credentials::select(&fixture.repo(), binding, &alias(target), &alias(resource))
                     .unwrap();
@@ -270,14 +300,36 @@ fn review() {
             "foreign" => {
                 json!(different.remote_operation("connection_test", args.clone(), &backend))
             }
-            "parallel" => std::thread::scope(|scope| {
+            "tighten" => {
+                let mut policy = query_policy("test");
+                policy.max_rows = 3;
+                fixture.edit(Edit::QueryPolicy {
+                    target: alias("test"),
+                    alias: alias("query-db"),
+                    policy,
+                });
+                json!(true)
+            }
+            "regrant-read" => {
+                fixture.grant("test", "query-db", RemoteAction::Read);
+                json!(true)
+            }
+            "parallel" | "parallel-query" => std::thread::scope(|scope| {
                 let handles: Vec<_> = args
                     .as_array()
                     .unwrap()
                     .iter()
                     .map(|a| {
                         scope.spawn(|| {
-                            session.remote_operation("database_schema", a.clone(), &backend)
+                            session.remote_operation(
+                                if op == "parallel-query" {
+                                    "database_query"
+                                } else {
+                                    "database_schema"
+                                },
+                                a.clone(),
+                                &backend,
+                            )
                         })
                     })
                     .collect();
@@ -308,7 +360,7 @@ fn review() {
                 backend.close().unwrap();
                 json!(true)
             }
-            "connection_test" | "database_schema" => {
+            "connection_test" | "database_schema" | "database_query" => {
                 json!(session.remote_operation(op, args.clone(), &backend))
             }
             _ => panic!("unknown fixture operation"),

@@ -345,3 +345,92 @@ fn mysql_table_edits_revoke_grants_and_route_edits_detach_credentials() {
         .unwrap()
     );
 }
+
+#[test]
+fn query_policy_requires_fresh_read_grants_on_all_bindings() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = StorePaths::at(tmp.path().join("state")).unwrap();
+    let store = Store::open(paths.clone()).unwrap();
+    let first = tmp.path().join("first");
+    let second = tmp.path().join("second");
+    for root in [&first, &second] {
+        std::fs::create_dir(root).unwrap();
+    }
+    let a = add_project(&store, &first, None, |_, _| true).unwrap();
+    let b = add_project(&store, &second, Some(a.project_id), |_, _| true).unwrap();
+    let set = |change| edit(&store, a.binding_id, &first, change).unwrap();
+    set(set_target(EnvironmentKind::Dev, RiskLevel::Low));
+    set(resource("fixture.invalid"));
+    set(Edit::MySqlPolicy {
+        target: alias("blue"),
+        alias: alias("db"),
+        route: MySqlRoute {
+            ips: ["127.0.0.1".parse().unwrap()].into(),
+            ca_pem: None,
+        },
+        tables: [(
+            "orders".into(),
+            MySqlTable {
+                columns: ["id".into()].into(),
+                indexes: Default::default(),
+            },
+        )]
+        .into(),
+    });
+    let read = || Edit::Grant {
+        target: alias("blue"),
+        alias: alias("db"),
+        action: RemoteAction::Read,
+        expires_at: None,
+    };
+    let approve = || {
+        set(read());
+        edit(&store, b.binding_id, &second, read()).unwrap();
+    };
+    let db = rusqlite::Connection::open(paths.database()).unwrap();
+    let live = |name: &str| {
+        db.query_row(
+            "SELECT count(*) FROM capability_grants WHERE capability=?1 AND revoked_at IS NULL",
+            [name],
+            |r| r.get::<_, i32>(0),
+        )
+        .unwrap()
+    };
+    let policy = |max_rows| Edit::QueryPolicy {
+        target: alias("blue"),
+        alias: alias("db"),
+        policy: QueryPolicy {
+            tables: [(
+                "orders".into(),
+                QueryColumns {
+                    readable: ["id".into()].into(),
+                    masked: Default::default(),
+                },
+            )]
+            .into(),
+            max_rows,
+            max_bytes: 8192,
+            timeout_ms: 1000,
+        },
+    };
+    set(grant());
+    approve();
+    assert_eq!(live("database.read"), 2);
+    set(policy(10));
+    assert_eq!(live("database.read"), 0);
+    approve();
+    set(policy(10));
+    assert_eq!(live("database.read"), 2);
+    set(policy(3));
+    assert_eq!(live("database.read"), 0);
+    assert_eq!(live("database.schema"), 1);
+    set(resource("changed.invalid"));
+    assert!(
+        db.query_row(
+            "SELECT mysql_query_policy IS NULL FROM resource_bindings",
+            [],
+            |r| r.get::<_, bool>(0)
+        )
+        .unwrap()
+    );
+}

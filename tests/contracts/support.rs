@@ -67,6 +67,7 @@ pub fn state() -> BindingSnapshot {
         endpoint_confirmed: true,
         route: None,
         tables: Default::default(),
+        query_policy: None,
         database: Some("orders".into()),
         credential_ref: Some(CredentialRef("fixture-reference".into())),
         policy_labels: vec![],

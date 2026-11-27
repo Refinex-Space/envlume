@@ -38,8 +38,8 @@ pub trait BoundProject: Send + Sync {
     fn environments(&self, _: Value) -> Option<Report> {
         None
     }
-    fn remote_visibility(&self) -> Result<(bool, bool), ErrorCode> {
-        Ok((false, false))
+    fn remote_visibility(&self) -> Result<(bool, bool, bool), ErrorCode> {
+        Ok((false, false, false))
     }
     fn remote(&self, _name: &str, _args: Value) -> Option<Report> {
         None
@@ -203,12 +203,17 @@ impl ServerHandler for Server {
             tools.push(Tool::new("task_run","Run a previously confirmed named build.",
                 json!({"type":"object","properties":{"taskId":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[a-z][a-z0-9_-]*$"}},"required":["taskId"],"additionalProperties":false}).as_object().unwrap().clone()));
         }
-        let (connect, schema) = self.project()?.remote_visibility().map_err(rejection)?;
+        let (connect, schema, read) = self.project()?.remote_visibility().map_err(rejection)?;
         for (enabled, name, description) in [
             (
                 connect,
                 "connection_test",
                 "Check an authorized MySQL connection.",
+            ),
+            (
+                read,
+                "database_query",
+                "Read permitted MySQL rows with local masking and limits.",
             ),
             (
                 schema,
@@ -222,7 +227,13 @@ impl ServerHandler for Server {
                 if name == "database_schema" {
                     props["table"] = json!({"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z_][A-Za-z0-9_]*$"});
                 }
-                let input = json!({"type":"object","properties":props,"required":["target","resource"],"additionalProperties":false});
+                let mut required = vec!["target", "resource"];
+                if name == "database_query" {
+                    props["sql"] =
+                        json!({"type":"string","minLength":1,"maxLength":8192,"pattern":"\\S"});
+                    required.push("sql");
+                }
+                let input = json!({"type":"object","properties":props,"required":required,"additionalProperties":false});
                 tools.push(Tool::new(
                     name,
                     description,
@@ -255,7 +266,15 @@ impl ServerHandler for Server {
                 .map_err(|_| rejection(ErrorCode::InternalError))?
                 .ok_or_else(|| ErrorData::invalid_params("Unknown tool", None))?
             }
-            "connection_test" | "database_schema" => {
+            "connection_test" | "database_schema" | "database_query" => {
+                if params.name == "database_query"
+                    && serde_json::to_vec(&ctx.id)
+                        .map_err(|_| rejection(ErrorCode::InvalidInput))?
+                        .len()
+                        > 256
+                {
+                    return Err(rejection(ErrorCode::InvalidInput));
+                }
                 let project = project.clone();
                 tokio::task::spawn_blocking(move || {
                     project

@@ -131,11 +131,19 @@ pub enum Cell {
 }
 #[derive(Debug, Serialize)]
 pub struct QueryResult {
+    #[serde(skip)]
+    masked_columns: usize,
     columns: Vec<String>,
     rows: Vec<Vec<Cell>>,
     truncated: bool,
 }
 impl QueryResult {
+    pub fn record_masking(&mut self, count: usize) {
+        self.masked_columns = count;
+    }
+    pub fn audit_summary(&self) -> serde_json::Value {
+        serde_json::json!({"rowCount":self.rows.len(),"columnCount":self.columns.len(),"maskedColumns":self.masked_columns,"truncated":self.truncated})
+    }
     pub fn new(
         columns: Vec<String>,
         rows: Vec<Vec<Cell>>,
@@ -145,6 +153,7 @@ impl QueryResult {
             return Err(ErrorCode::InternalError);
         }
         Ok(Self {
+            masked_columns: 0,
             columns,
             rows,
             truncated,
@@ -251,6 +260,11 @@ impl Report {
         self.summary = message.into();
     }
 
+    pub fn timestamp_text(&self) -> String {
+        self.timestamp_utc
+            .format(&Rfc3339)
+            .expect("report timestamp")
+    }
     pub fn exit_code(&self) -> u8 {
         self.error_code.map_or(0, ErrorCode::exit_code)
     }

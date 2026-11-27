@@ -108,7 +108,7 @@ pub(super) fn read_snapshot(conn: &Connection, id: BindingId) -> Decode<Option<B
             })
         })?
         .collect::<Decode<Vec<_>>>()?;
-    let sql = "SELECT r.id,r.target_id,r.alias,r.kind,r.host,r.port,r.tls_mode,r.credential_ref,r.policy_labels,r.status,r.database_name,r.confirmed_at_ms IS NOT NULL,r.mysql_route,r.mysql_tables
+    let sql = "SELECT r.id,r.target_id,r.alias,r.kind,r.host,r.port,r.tls_mode,r.credential_ref,r.policy_labels,r.status,r.database_name,r.confirmed_at_ms IS NOT NULL,r.mysql_route,r.mysql_tables,r.mysql_query_policy
         FROM resource_bindings r JOIN environment_targets t ON t.id=r.target_id WHERE t.project_id=?1 ORDER BY r.id";
     let resources = conn
         .prepare(sql)?
@@ -136,6 +136,11 @@ pub(super) fn read_snapshot(conn: &Connection, id: BindingId) -> Decode<Option<B
                 endpoint_confirmed: r.get(11)?,
                 route: r
                     .get::<_, Option<String>>(12)?
+                    .map(|s| serde_json::from_str(&s))
+                    .transpose()
+                    .map_err(|_| invalid())?,
+                query_policy: r
+                    .get::<_, Option<String>>(14)?
                     .map(|s| serde_json::from_str(&s))
                     .transpose()
                     .map_err(|_| invalid())?,

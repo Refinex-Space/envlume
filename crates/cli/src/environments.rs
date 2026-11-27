@@ -54,6 +54,11 @@ fn file(path: &str, max: u64) -> Result<Vec<u8>, ErrorCode> {
 fn parse_edit(args: &[&str]) -> Result<Edit, ErrorCode> {
     let invalid = ErrorCode::InvalidInput;
     Ok(match args {
+        ["mysql-query-policy", t, r, path] => Edit::QueryPolicy {
+            target: alias(t)?,
+            alias: alias(r)?,
+            policy: serde_json::from_slice(&file(path, 65536)?).map_err(|_| invalid)?,
+        },
         ["mysql-policy", t, r, path, rest @ ..] => {
             #[derive(serde::Deserialize)]
             #[serde(deny_unknown_fields)]
@@ -205,7 +210,10 @@ fn execute(
         }
         return Ok(report.exit_code());
     }
-    if operation.first() == Some(&"mysql-policy") {
+    if matches!(
+        operation.first(),
+        Some(&"mysql-policy" | &"mysql-query-policy")
+    ) {
         // Parsing this edit reads local files. Authenticate the origin before opening them.
         Session::from_registration(&registry, binding, Actor::Cli)?;
     }

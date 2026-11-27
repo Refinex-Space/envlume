@@ -403,7 +403,7 @@ impl Tasks {
             actor,
         })
     }
-    pub(super) fn remote_visibility(&self) -> std::result::Result<(bool, bool), ErrorCode> {
+    pub(super) fn remote_visibility(&self) -> std::result::Result<(bool, bool, bool), ErrorCode> {
         let backend = self
             .registry
             .get()

@@ -105,7 +105,7 @@ impl<R: Repository> Session<R> {
     pub fn refresh_remote(
         &self,
         backend: Option<&dyn crate::remote::DatabaseBackend>,
-    ) -> Result<(bool, bool), ErrorCode> {
+    ) -> Result<(bool, bool, bool), ErrorCode> {
         let state = match self.snapshot() {
             Ok(s) => s,
             Err(e) => {
@@ -145,16 +145,22 @@ impl<R: Repository> Session<R> {
         }
         let mut connect = false;
         let mut schema = false;
+        let mut read = false;
         for (action, resource) in state.grants.iter().filter_map(live) {
             if resource.route.is_none()
                 || backend.is_some_and(|b| !b.capabilities().contains(&action))
             {
                 continue;
             }
+            read |= action == RemoteAction::Read
+                && resource
+                    .query_policy
+                    .as_ref()
+                    .is_some_and(|p| p.valid_for(&resource.tables));
             connect |= action == RemoteAction::Connect;
             schema |= action == RemoteAction::Schema && !resource.tables.is_empty();
         }
-        Ok((connect, schema))
+        Ok((connect, schema, read))
     }
     pub fn remote_operation(
         &self,
@@ -167,15 +173,15 @@ impl<R: Repository> Session<R> {
             let mut report = Report::new(match name {
                 "connection_test" => "connection_test",
                 "database_schema" => "database_schema",
+                "database_query" => "database_query",
                 _ => "unknown",
             });
             report.fail(code, code.summary());
             return report;
         }
         let mut report = self.dispatch(name, args, |op, request| {
-            let (endpoint, table, is_test) = match op {
-                Resolved::Connect(r) => (r, None, true),
-                Resolved::Schema(r, t) => (r, t, false),
+            let endpoint = match &op {
+                Resolved::Connect(r) | Resolved::Schema(r, _) | Resolved::Query(r, _) => r,
                 _ => return Err(ErrorCode::InvalidInput.into()),
             };
             let r = AuthorizedResource {
@@ -183,15 +189,33 @@ impl<R: Repository> Session<R> {
                 request,
                 reload: &|| self.snapshot(),
             };
-            let result = if is_test {
-                backend.test(&r).map(Payload::Connection)
-            } else {
-                backend
+            let evidence = !matches!(op, Resolved::Schema(..));
+            let result = match op {
+                Resolved::Connect(_) => backend.test(&r).map(Payload::Connection),
+                Resolved::Schema(_, table) => backend
                     .schema(&r, table)
-                    .map(|tables| Payload::Schema { tables })
+                    .map(|tables| Payload::Schema { tables }),
+                Resolved::Query(_, text) => {
+                    let b = r.binding()?;
+                    let policy = b
+                        .query_policy
+                        .as_ref()
+                        .filter(|p| p.valid_for(&b.tables))
+                        .ok_or(ErrorCode::QueryNotAllowed)?;
+                    let plan = envlume_policy::query::compile(
+                        text.as_str(),
+                        b.database.as_deref().ok_or(ErrorCode::TargetNotAllowed)?,
+                        policy,
+                    )
+                    .map_err(|_| ErrorCode::QueryNotAllowed)?;
+                    backend
+                        .query(&crate::remote::AuthorizedQuery { resource: &r, plan })
+                        .map(Payload::Query)
+                }
+                _ => return Err(ErrorCode::InvalidInput.into()),
             };
             match result {
-                Ok(payload) => Ok((payload, is_test.then(EvidenceId::generate))),
+                Ok(payload) => Ok((payload, evidence.then(EvidenceId::generate))),
                 Err(e) => {
                     fault = Some(e);
                     Err(e.code().into())

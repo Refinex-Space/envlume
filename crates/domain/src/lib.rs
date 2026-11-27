@@ -112,6 +112,56 @@ pub struct MySqlTable {
     pub indexes: std::collections::BTreeSet<String>,
 }
 pub type TableScope = std::collections::BTreeMap<String, MySqlTable>;
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueryPolicy {
+    pub tables: std::collections::BTreeMap<String, QueryColumns>,
+    #[serde(default = "default_rows")]
+    pub max_rows: usize,
+    #[serde(default = "default_bytes")]
+    pub max_bytes: usize,
+    #[serde(default = "default_timeout")]
+    pub timeout_ms: u64,
+}
+const fn default_rows() -> usize {
+    200
+}
+const fn default_bytes() -> usize {
+    256 * 1024
+}
+const fn default_timeout() -> u64 {
+    5000
+}
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueryColumns {
+    pub readable: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    pub masked: std::collections::BTreeSet<String>,
+}
+impl QueryPolicy {
+    pub fn valid_for(&self, scope: &TableScope) -> bool {
+        fn distinct_names<'a>(names: impl Iterator<Item = &'a String>) -> bool {
+            let mut folded = std::collections::BTreeSet::new();
+            names
+                .map(|s| s.to_ascii_lowercase())
+                .all(|s| folded.insert(s))
+        }
+        (1..=default_rows()).contains(&self.max_rows)
+            && (4096..=default_bytes()).contains(&self.max_bytes)
+            && (1..=default_timeout()).contains(&self.timeout_ms)
+            && !self.tables.is_empty()
+            && distinct_names(self.tables.keys())
+            && self.tables.iter().all(|(name, q)| {
+                scope.get(name).is_some_and(|t| {
+                    (!q.readable.is_empty() || !q.masked.is_empty())
+                        && distinct_names(q.readable.iter().chain(&q.masked))
+                        && q.readable.is_subset(&t.columns)
+                        && q.masked.is_subset(&t.columns)
+                })
+            })
+    }
+}
 #[derive(Clone, PartialEq, Eq)]
 pub struct ResourceBinding {
     pub id: ResourceId,
@@ -126,6 +176,7 @@ pub struct ResourceBinding {
     pub database: Option<String>,
     pub route: Option<MySqlRoute>,
     pub tables: TableScope,
+    pub query_policy: Option<QueryPolicy>,
     pub policy_labels: Vec<Alias>,
     pub status: Status,
 }
@@ -270,4 +321,36 @@ pub struct ClientIntegration {
     pub config_location: PathBuf,
     pub config_fingerprint: String,
     pub status: IntegrationStatus,
+}
+
+#[cfg(test)]
+mod query_policy_tests {
+    use super::*;
+    #[test]
+    fn identifier_case_cannot_give_one_mysql_column_or_table_two_policies() {
+        let columns = MySqlTable {
+            columns: ["name", "NAME"].map(str::to_string).into(),
+            indexes: Default::default(),
+        };
+        let scope = TableScope::from([
+            ("Orders".into(), columns.clone()),
+            ("orders".into(), columns),
+        ]);
+        let set = QueryColumns {
+            readable: ["NAME".into()].into(),
+            masked: ["name".into()].into(),
+        };
+        let mut policy = QueryPolicy {
+            tables: [("orders".into(), set)].into(),
+            max_bytes: 4096,
+            max_rows: 1,
+            timeout_ms: 100,
+        };
+        assert!(!policy.valid_for(&scope));
+        policy.tables.get_mut("orders").unwrap().masked.clear();
+        policy
+            .tables
+            .insert("Orders".into(), policy.tables["orders"].clone());
+        assert!(!policy.valid_for(&scope));
+    }
 }

@@ -889,6 +889,7 @@ dependencies = [
  "envlume-domain",
  "envlume-secrets",
  "mysql_async",
+ "serde",
  "serde_json",
  "tokio",
 ]
@@ -959,6 +960,7 @@ name = "envlume-policy"
 version = "0.1.0-dev.1"
 dependencies = [
  "envlume-domain",
+ "sqlparser",
 ]
 
 [[package]]
@@ -3922,6 +3924,15 @@ checksum = "a6cd504cecbfe7eef649988840f9a6cb768d11085efec138f8e99f160632d867"
 dependencies = [
  "cc",
  "rsqlite-vfs",
+]
+
+[[package]]
+name = "sqlparser"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92e0d273b4f8ddd14a35ed36862acbc9cc96cec578e36ee1881a9d42e0e0f2c8"
+dependencies = [
+ "log",
 ]
 
 [[package]]

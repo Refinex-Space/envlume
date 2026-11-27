@@ -166,13 +166,18 @@ def mysql_fixture(base):
             pwd = secrets.token_hex(24)
             marker = target + "_marker"
             sql(f"""CREATE DATABASE {db};
-            CREATE TABLE {db}.{marker}(id BIGINT PRIMARY KEY, name VARCHAR(64), hidden_value VARCHAR(32),
+            CREATE TABLE {db}.{marker}(id BIGINT PRIMARY KEY, name VARCHAR(64), hidden_value VARCHAR(32), payload MEDIUMTEXT,
                 INDEX name_idx(name), INDEX unlisted_idx(name), INDEX mixed_idx(name,hidden_value));
             CREATE TABLE {db}.hidden_table(id INT PRIMARY KEY);
             CREATE TABLE {db}.db_hidden(id INT PRIMARY KEY);
             CREATE USER '{user}'@'%' IDENTIFIED BY '{pwd}' REQUIRE SSL;
             GRANT SELECT ON {db}.{marker} TO '{user}'@'%';
             GRANT SELECT ON {db}.hidden_table TO '{user}'@'%';""")
+            sql(f"""INSERT INTO {db}.{marker}(id,name,payload)
+                WITH RECURSIVE n AS (SELECT 1 AS i UNION ALL SELECT i+1 FROM n WHERE i<220)
+                SELECT i,'synthetic-private-name',CONCAT('行',i) FROM n;
+                UPDATE {db}.{marker} SET payload=REPEAT(CONCAT('界',CHAR(34),CHAR(92),CHAR(10)),500) WHERE id BETWEEN 20 AND 80;
+                UPDATE {db}.{marker} SET payload=REPEAT('界',80000) WHERE id=220;""")
             grants = sql(f"SHOW GRANTS FOR '{user}'@'%'")
             assert all(
                 line.startswith(("GRANT USAGE ON ", "GRANT SELECT ON "))
@@ -207,7 +212,39 @@ def mysql_fixture(base):
             )
             assert denied.returncode and b"1142" in denied.stderr
             accounts[target] = {"user": user, "password": pwd}
-        yield {"port": port, "ca": str(tls / "ca.pem"), "accounts": accounts}, sql
+
+        @contextlib.contextmanager
+        def table_lock():
+            lock = subprocess.Popen(
+                [
+                    "docker",
+                    "exec",
+                    "-i",
+                    cid,
+                    "mysql",
+                    "--defaults-extra-file=/fixture-admin/client.cnf",
+                    "-NB",
+                    "--unbuffered",
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+            )
+            try:
+                lock.stdin.write(
+                    b"LOCK TABLES orders_test.test_marker WRITE; SELECT 1;\n"
+                )
+                lock.stdin.flush()
+                assert lock.stdout.readline().strip() == b"1"
+                yield
+            finally:
+                lock.stdin.close()
+                assert lock.wait(timeout=10) == 0
+
+        yield {
+            "port": port,
+            "ca": str(tls / "ca.pem"),
+            "accounts": accounts,
+        }, sql, table_lock
     finally:
         run(["docker", "rm", "-f", cid], timeout=60)
 
@@ -233,7 +270,7 @@ def binary(package, target, *flags):
     )
 
 
-def recv(proc, timeout=60):
+def recv(proc, timeout=60, sizes=None):
     import select
 
     if not select.select([proc.stdout], [], [], timeout)[0]:
@@ -241,6 +278,8 @@ def recv(proc, timeout=60):
     line = proc.stdout.readline()
     if not line:
         raise RuntimeError("fixture process exited")
+    if sizes is not None:
+        sizes.append(len(line))
     return json.loads(line)
 
 
@@ -272,7 +311,7 @@ def review():
         offline.bind(("127.0.0.1", 0))
         hung.bind(("127.0.0.1", 0))
         hung.listen(4)
-        with mysql_fixture(base) as (cfg, sql):
+        with mysql_fixture(base) as (cfg, sql, table_lock):
             cfg.update(
                 base=tmp, offline=offline.getsockname()[1], hung=hung.getsockname()[1]
             )
@@ -417,6 +456,7 @@ def review():
                     statuses["primary-db"] == "healthy"
                     and statuses["bad-login"] == "unavailable"
                 )
+                receipt["query"] = check_queries(request, sql, table_lock)
                 if helper:
                     receipt["cliAudit"] = check_cli_mcp(helper, setup)
                 assert request("connection_test", args())["result"]["ok"]
@@ -460,6 +500,128 @@ def review():
                 assert rc == 0, "fixture teardown failed"
 
 
+def check_queries(request, sql, table_lock):
+    def args(text, target="dev"):
+        return {"target": target, "resource": "query-db", "sql": text}
+
+    def query(text, target="dev"):
+        report = request("database_query", args(text, target))["result"]
+        assert report["ok"], report
+        return report
+
+    baseline = query(
+        "SELECT a.id, a.name AS customer FROM orders_dev.dev_marker a ORDER BY a.id LIMIT 1"
+    )
+    assert baseline["evidenceId"] and baseline["result"] == {
+        "columns": ["id", "customer"],
+        "rows": [[1, "[REDACTED]"]],
+        "truncated": False,
+    }
+    nested = query(
+        "SELECT a.* FROM (SELECT name AS customer, id FROM dev_marker WHERE id = 1) AS a"
+    )
+    assert nested["result"]["rows"] == [["[REDACTED]", 1]]
+    assert query("SELECT COUNT(*) AS n FROM dev_marker")["result"]["rows"] == [[220]]
+    assert query("SELECT id FROM dev_marker WHERE id = 0")["result"]["rows"] == []
+
+    def statements():
+        return sql(
+            "SELECT COALESCE(SUM(COUNT_STAR),0) FROM performance_schema.events_statements_summary_by_account_by_event_name WHERE USER='t11_dev'"
+        )
+
+    counter = statements()
+    before = request("health")["reads"]
+    denied = [
+        "SELECT id FROM dev_marker; SELECT id FROM dev_marker",
+        "SELECT SLEEP(0) FROM dev_marker",
+        "SELECT id FROM dev_marker FOR UPDATE",
+        "DELETE FROM dev_marker WHERE id = 0",
+        "SHOW TABLES",
+        "SELECT id FROM orders_test.test_marker",
+        "SELECT id FROM hidden_table",
+        "SELECT hidden_value FROM dev_marker",
+        "SELECT d.* FROM (SELECT hidden_value FROM dev_marker) d",
+        "SELECT other.* FROM dev_marker",
+        "SELECT id FROM dev_marker ORDER BY name",
+        "SELECT id FROM dev_marker WHERE name = 'test'",
+    ]
+    for text in denied:
+        refusal = request("database_query", args(text))
+        assert (
+            refusal["reads"] == before
+            and refusal["result"]["errorCode"] == "QUERY_NOT_ALLOWED"
+        ), refusal
+    assert statements() == counter
+    assert (
+        request(
+            "database_query", {**args("SELECT id FROM dev_marker"), "maxRows": 999}
+        )["result"]["errorCode"]
+        == "INVALID_INPUT"
+    )
+    rows = query("SELECT id FROM dev_marker ORDER BY id LIMIT 99999")["result"]
+    assert rows["truncated"] and rows["rows"] == [[i] for i in range(1, 201)]
+    long = query("SELECT payload FROM dev_marker WHERE id = 220")["result"]
+    assert long["truncated"] and not long["rows"]
+    bounded = query("SELECT payload FROM dev_marker WHERE id >= 20 ORDER BY id")[
+        "result"
+    ]
+    assert bounded["truncated"] and 0 < len(bounded["rows"]) < 61
+    assert bounded["rows"][0][0] == ("界" + chr(34) + chr(92) + chr(10)) * 500
+    assert (
+        len(query("SELECT id FROM test_marker LIMIT 1000", "test")["result"]["rows"])
+        == 7
+    )
+    request("tighten")
+    assert (
+        request("database_query", args("SELECT id FROM test_marker", "test"))["result"][
+            "errorCode"
+        ]
+        == "POLICY_DENIED"
+    )
+    request("regrant-read")
+    assert (
+        len(query("SELECT id FROM test_marker LIMIT 1000", "test")["result"]["rows"])
+        == 3
+    )
+
+    sql("GRANT UPDATE ON orders_test.test_marker TO 't11_test'@'%'")
+    try:
+        broad = request("database_query", args("SELECT id FROM test_marker", "test"))[
+            "result"
+        ]
+        assert broad["errorCode"] == "POLICY_DENIED" and "read-only" in broad["summary"]
+    finally:
+        sql("REVOKE UPDATE ON orders_test.test_marker FROM 't11_test'@'%'")
+    with table_lock():
+        start = time.monotonic()
+        reports = request(
+            "parallel-query",
+            [args("SELECT id FROM test_marker", "test") for _ in range(12)],
+        )["result"]
+        elapsed = time.monotonic() - start
+        assert all(r.get("errorCode") == "TIMEOUT" for r in reports), [
+            (r.get("errorCode"), r["summary"], r["durationMs"]) for r in reports
+        ]
+        assert any("pool limit" in r["summary"] for r in reports)
+        assert any("deadline" in r["summary"] for r in reports)
+        assert elapsed < 5
+        wait_for(
+            lambda: sql("SELECT COUNT(*) FROM performance_schema.threads WHERE PROCESSLIST_USER='t11_test' AND PROCESSLIST_STATE='Waiting for table metadata lock'") == "0",
+            "timed-out query still waiting on server metadata lock", 4
+        )
+    assert query("SELECT id FROM test_marker WHERE id = 1", "test")["result"][
+        "rows"
+    ] == [[1]]
+    return {
+        "deniedBeforeLoginAndMySQL": len(denied),
+        "defaultRows": len(rows["rows"]),
+        "escapedRows": len(bounded["rows"]),
+        "tightenedRows": 3,
+        "parallel": len(reports),
+        "elapsedMs": round(elapsed * 1000),
+    }
+
+
 def check_cli_mcp(helper, setup):
     env = {**os.environ, "T05_FIXTURE_STORE": setup["store"]}
     scope = ["--binding", setup["binding"]]
@@ -493,11 +655,13 @@ def check_cli_mcp(helper, setup):
     )
     seq = 0
 
+    sizes = []
+
     def call(method, params):
         nonlocal seq
         seq += 1
         send(proc, {"jsonrpc": "2.0", "id": seq, "method": method, "params": params})
-        msg = recv(proc)
+        msg = recv(proc, sizes=sizes)
         assert msg["id"] == seq
         return msg["result"]
 
@@ -521,12 +685,78 @@ def check_cli_mcp(helper, setup):
         assert ctx["ok"] and ctx["result"]["targets"] == ["dev", "test"]
         advertised = call("tools/list", {})["tools"]
         frozen = json.loads((REPO / "tests/contracts/tools.json").read_text())
-        for name in ["connection_test", "database_schema"]:
+        for name in ["connection_test", "database_schema", "database_query"]:
             assert next(
                 t["inputSchema"] for t in advertised if t["name"] == name
             ) == next(t["inputSchema"] for t in frozen if t["name"] == name)
         result = tool("database_schema", {"target": "dev", "resource": "primary-db"})
         assert result["result"]["tables"][0]["table"] == "dev_marker"
+        reader = {"target": "dev", "resource": "query-db"}
+        query_text = "SELECT name,payload FROM dev_marker WHERE id >= 20 ORDER BY id"
+        cli_wire = run(
+            [helper, "database", "query", "dev", "query-db", *scope, "--json"],
+            cwd=setup["workspace"],
+            env=env,
+            data=query_text.encode(),
+        )
+        cli_result = json.loads(cli_wire)
+        assert (
+            cli_result["ok"]
+            and cli_result["result"]["truncated"]
+            and len(cli_wire) <= 262144
+        )
+        report = tool("database_query", {**reader, "sql": query_text})
+        assert (
+            report["result"] == cli_result["result"]
+            and sizes[-1] <= 262144
+            and report["evidenceId"]
+        )
+        full_bytes = sizes[-1]
+        assert all(row[0] == "[REDACTED]" for row in report["result"]["rows"])
+        audit = cli("report", "show", "--evidence", report["evidenceId"])
+        assert audit["query"] == {
+            "rowCount": len(report["result"]["rows"]),
+            "columnCount": 2,
+            "maskedColumns": 1,
+            "truncated": True,
+        }
+        assert (
+            audit["requestId"] == report["requestId"]
+            and audit["targetId"]
+            and audit["resourceId"]
+        )
+        assert (
+            "rows" not in audit
+            and "result" not in audit
+            and len(json.dumps(audit)) < 4096
+        )
+        assert all(
+            s not in json.dumps(audit, ensure_ascii=False)
+            for s in [query_text, "synthetic-private-name", "界", "[REDACTED]"]
+        )
+        small = tool(
+            "database_query",
+            {
+                "target": "test",
+                "resource": "query-db",
+                "sql": "SELECT payload FROM test_marker WHERE id >= 20 ORDER BY id",
+            },
+        )
+        assert small["result"]["truncated"] and sizes[-1] <= 8192
+        print(
+            "T12 wire evidence "
+            + json.dumps(
+                {
+                    "cliBytes": len(cli_wire),
+                    "mcpBytes": full_bytes,
+                    "tightMcpBytes": sizes[-1],
+                    "evidenceId": report["evidenceId"],
+                    "requestId": report["requestId"],
+                    "audit": audit["query"],
+                }
+            ),
+            flush=True,
+        )
         denied = tool(
             "connection_test",
             {"target": "dev", "resource": "primary-db", "host": "local.invalid"},
