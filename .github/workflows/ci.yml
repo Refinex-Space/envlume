@@ -74,6 +74,11 @@ jobs:
         env:
           T05_NATIVE_CLI: ${{ github.workspace }}/target/${{ matrix.target }}/debug/envlume${{ runner.os == 'Windows' && '.exe' || '' }}
         run: cargo test --locked -p envlume --test workspace_trust
+      - name: Verify Phase 2 with two native MCP processes, CLI and real MySQL
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: |
+          brew install mysql@8.4
+          python3 -B tests/mysql/r2.py --mysql-bin-dir "$(brew --prefix mysql@8.4)/bin" --snapshot "$RUNNER_TEMP/r2-evidence.json"
       - name: Verify Phase 1 Java 8 build and JDK 17/21 binding isolation
         if: runner.os == 'Windows'
         run: |

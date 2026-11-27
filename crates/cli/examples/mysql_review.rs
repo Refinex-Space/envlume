@@ -24,6 +24,10 @@ use std::{
     },
 };
 
+#[cfg(any(windows, target_os = "macos"))]
+#[path = "mysql_review/r2.rs"]
+mod r2;
+
 struct ReviewLogins {
     #[cfg(any(windows, target_os = "macos"))]
     native: NativeVault<Store>,
@@ -133,6 +137,10 @@ fn review() {
     let mut first = lines.next().unwrap().unwrap();
     let cfg: Value = serde_json::from_str(&first).expect("fixture configuration");
     first.clear();
+    #[cfg(any(windows, target_os = "macos"))]
+    if cfg["phase"] == "R2" {
+        return r2::provision(&cfg, lines);
+    }
     let base = Path::new(cfg["base"].as_str().unwrap());
     let root = base.join("workspace");
     std::fs::create_dir(&root).unwrap();

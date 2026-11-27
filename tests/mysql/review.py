@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import socket
 import subprocess
 import tempfile
 import time
@@ -25,7 +26,140 @@ def run(args, *, data=None, cwd=None, env=None, timeout=90):
 
 
 @contextlib.contextmanager
-def mysql_fixture(base):
+def docker_server(base):
+    tls, admin = base / "tls", base / "admin"
+    name = "envlume-t11-" + uuid.uuid4().hex
+    cid = (
+        run(
+            [
+                "docker",
+                "run",
+                "-d",
+                "--rm",
+                "--name",
+                name,
+                "--tmpfs",
+                "/var/lib/mysql",
+                "-p",
+                "127.0.0.1::3306",
+                "-v",
+                str(tls) + ":/fixture-tls:ro",
+                "-v",
+                str(admin) + ":/fixture-admin:ro",
+                "-e",
+                "MYSQL_ROOT_PASSWORD_FILE=/fixture-tls/bootstrap-password",
+                IMAGE,
+                "--mysqlx=OFF",
+                "--require-secure-transport=ON",
+                "--ssl-ca=/fixture-tls/ca.pem",
+                "--ssl-cert=/fixture-tls/server.pem",
+                "--ssl-key=/fixture-tls/server.key",
+                "--local-infile=OFF",
+            ],
+            timeout=300,
+        )
+        .decode()
+        .strip()
+    )
+
+    try:
+        port = int(
+            run(["docker", "port", cid, "3306/tcp"]).decode().strip().split(":")[-1]
+        )
+        prefix = ["docker", "exec", "-i", cid, "mysql"]
+
+        def reader(target):
+            return [
+                *prefix,
+                "--defaults-extra-file=/fixture-admin/" + target + ".cnf",
+                "--protocol=tcp",
+                "-hlocalhost",
+                "--ssl-mode=VERIFY_IDENTITY",
+                "--ssl-ca=/fixture-tls/ca.pem",
+                "-NB",
+            ]
+
+        yield port, [
+            *prefix,
+            "--defaults-extra-file=/fixture-admin/client.cnf",
+            "-NB",
+        ], reader
+    finally:
+        run(["docker", "rm", "-f", cid], timeout=60)
+
+
+@contextlib.contextmanager
+def native_server(base, mysql_bin, password):
+    # Hosted macOS uses a private MySQL instance; no launch agent, shared datadir or default socket.
+    datadir, tls, admin = base / "mysqldata", base / "tls", base / "admin"
+    datadir.mkdir(mode=0o700)
+    sock = str(base / "mysql.sock")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    server = [
+        str(mysql_bin / "mysqld"),
+        "--no-defaults",
+        "--basedir=" + str(mysql_bin.parent),
+        "--datadir=" + str(datadir),
+        "--log-error=" + str(base / "mysqld.log"),
+        "--secure-file-priv=NULL",
+    ]
+    run([*server, "--initialize-insecure"], timeout=120)
+    # MySQL applies the generated root password before accepting any connections.
+    init = admin / "init.sql"
+    init.write_text(f"ALTER USER 'root'@'localhost' IDENTIFIED BY '{password}';\n")
+    init.chmod(0o400)
+    proc = subprocess.Popen(
+        [
+            *server,
+            "--init-file=" + str(init),
+            "--socket=" + sock,
+            "--port=" + str(port),
+            "--bind-address=127.0.0.1",
+            "--mysqlx=OFF",
+            "--local-infile=OFF",
+            "--require-secure-transport=ON",
+            "--ssl-ca=" + str(tls / "ca.pem"),
+            "--ssl-cert=" + str(tls / "server.pem"),
+            "--ssl-key=" + str(tls / "server.key"),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        mysql = str(mysql_bin / "mysql")
+
+        def reader(target):
+            return [
+                mysql,
+                "--defaults-file=" + str(admin / (target + ".cnf")),
+                "--protocol=tcp",
+                "-hlocalhost",
+                "--port=" + str(port),
+                "--ssl-mode=VERIFY_IDENTITY",
+                "--ssl-ca=" + str(tls / "ca.pem"),
+                "-NB",
+            ]
+
+        yield port, [
+            mysql,
+            "--defaults-file=" + str(admin / "client.cnf"),
+            "--socket=" + sock,
+            "-NB",
+        ], reader
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise
+
+
+@contextlib.contextmanager
+def mysql_fixture(base, mysql_bin=None):
     tls = base / "tls"
     tls.mkdir(mode=0o755)
 
@@ -92,67 +226,20 @@ def mysql_fixture(base):
     )
     for p in admin.iterdir():
         p.chmod(0o400)
-    name = "envlume-t11-" + uuid.uuid4().hex
-    cid = (
-        run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--rm",
-                "--name",
-                name,
-                "--tmpfs",
-                "/var/lib/mysql",
-                "-p",
-                "127.0.0.1::3306",
-                "-v",
-                str(tls) + ":/fixture-tls:ro",
-                "-v",
-                str(admin) + ":/fixture-admin:ro",
-                "-e",
-                "MYSQL_ROOT_PASSWORD_FILE=/fixture-tls/bootstrap-password",
-                IMAGE,
-                "--mysqlx=OFF",
-                "--require-secure-transport=ON",
-                "--ssl-ca=/fixture-tls/ca.pem",
-                "--ssl-cert=/fixture-tls/server.pem",
-                "--ssl-key=/fixture-tls/server.key",
-                "--local-infile=OFF",
-            ],
-            timeout=300,
-        )
-        .decode()
-        .strip()
+    server = (
+        docker_server(base)
+        if mysql_bin is None
+        else native_server(base, mysql_bin, root)
     )
+    with server as (port, admin_cmd, reader_cmd):
 
-    def sql(statement):
-        return (
-            run(
-                [
-                    "docker",
-                    "exec",
-                    "-i",
-                    cid,
-                    "mysql",
-                    "--defaults-extra-file=/fixture-admin/client.cnf",
-                    "-N",
-                    "-B",
-                ],
-                data=statement.encode(),
-            )
-            .decode()
-            .strip()
-        )
+        def sql(statement):
+            return run(admin_cmd, data=statement.encode()).decode().strip()
 
-    try:
-        port = int(
-            run(["docker", "port", cid, "3306/tcp"]).decode().strip().split(":")[-1]
-        )
         end = time.monotonic() + 120
         while True:
             try:
-                if sql("SELECT @@port") == "3306":
+                if sql("SELECT @@port") == str(3306 if mysql_bin is None else port):
                     break
             except RuntimeError:
                 pass
@@ -186,21 +273,7 @@ def mysql_fixture(base):
             client = admin / (target + ".cnf")
             client.write_text("[client]\nuser=" + user + "\npassword=" + pwd + "\n")
             client.chmod(0o400)
-            mysql = [
-                "docker",
-                "exec",
-                "-i",
-                cid,
-                "mysql",
-                "--defaults-extra-file=/fixture-admin/" + target + ".cnf",
-                "--protocol=tcp",
-                "-hlocalhost",
-                "--ssl-mode=VERIFY_IDENTITY",
-                "--ssl-ca=/fixture-tls/ca.pem",
-                "-N",
-                "-B",
-                db,
-            ]
+            mysql = reader_cmd(target) + [db]
             assert set(run(mysql, data=b"SHOW TABLES").decode().splitlines()) == {
                 marker,
                 "hidden_table",
@@ -213,26 +286,26 @@ def mysql_fixture(base):
             assert denied.returncode and b"1142" in denied.stderr
             accounts[target] = {"user": user, "password": pwd}
 
+        for target, other in [("dev", "test"), ("test", "dev")]:
+            attempt = subprocess.run(
+                reader_cmd(target),
+                input=f"SELECT id FROM orders_{other}.{other}_marker LIMIT 1".encode(),
+                capture_output=True,
+            )
+            assert attempt.returncode and b"1142" in attempt.stderr
+
         @contextlib.contextmanager
-        def table_lock():
+        def table_lock(*, both=False):
             lock = subprocess.Popen(
-                [
-                    "docker",
-                    "exec",
-                    "-i",
-                    cid,
-                    "mysql",
-                    "--defaults-extra-file=/fixture-admin/client.cnf",
-                    "-NB",
-                    "--unbuffered",
-                ],
+                [*admin_cmd, "--unbuffered"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
             )
             try:
-                lock.stdin.write(
-                    b"LOCK TABLES orders_test.test_marker WRITE; SELECT 1;\n"
-                )
+                tables = "orders_test.test_marker WRITE"
+                if both:
+                    tables += ", orders_dev.dev_marker WRITE"
+                lock.stdin.write(f"LOCK TABLES {tables}; SELECT 1;\n".encode())
                 lock.stdin.flush()
                 assert lock.stdout.readline().strip() == b"1"
                 yield
@@ -245,8 +318,6 @@ def mysql_fixture(base):
             "ca": str(tls / "ca.pem"),
             "accounts": accounts,
         }, sql, table_lock
-    finally:
-        run(["docker", "rm", "-f", cid], timeout=60)
 
 
 def binary(package, target, *flags):
@@ -606,8 +677,12 @@ def check_queries(request, sql, table_lock):
         assert any("deadline" in r["summary"] for r in reports)
         assert elapsed < 5
         wait_for(
-            lambda: sql("SELECT COUNT(*) FROM performance_schema.threads WHERE PROCESSLIST_USER='t11_test' AND PROCESSLIST_STATE='Waiting for table metadata lock'") == "0",
-            "timed-out query still waiting on server metadata lock", 4
+            lambda: sql(
+                "SELECT COUNT(*) FROM performance_schema.threads WHERE PROCESSLIST_USER='t11_test' AND PROCESSLIST_STATE='Waiting for table metadata lock'"
+            )
+            == "0",
+            "timed-out query still waiting on server metadata lock",
+            4,
         )
     assert query("SELECT id FROM test_marker WHERE id = 1", "test")["result"][
         "rows"
