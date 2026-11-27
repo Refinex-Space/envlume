@@ -104,7 +104,14 @@ pub struct MySqlRoute {
     pub ips: std::collections::BTreeSet<std::net::IpAddr>,
     pub ca_pem: Option<String>,
 }
-pub type TableScope = std::collections::BTreeMap<String, std::collections::BTreeSet<String>>;
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MySqlTable {
+    pub columns: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    pub indexes: std::collections::BTreeSet<String>,
+}
+pub type TableScope = std::collections::BTreeMap<String, MySqlTable>;
 #[derive(Clone, PartialEq, Eq)]
 pub struct ResourceBinding {
     pub id: ResourceId,

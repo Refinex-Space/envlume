@@ -3,22 +3,25 @@ use envlume_application::{
     remote::RemoteFault,
     result::{Column, Index, Table},
 };
-use std::collections::{BTreeMap, BTreeSet};
+use envlume_domain::MySqlTable;
+use std::collections::BTreeMap;
 
 pub(super) const COLUMNS: &str =
     "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM information_schema.COLUMNS
     WHERE BINARY TABLE_SCHEMA = BINARY ? AND BINARY TABLE_NAME = BINARY ?
+    AND FIND_IN_SET(BINARY COLUMN_NAME,?)>0
     ORDER BY ORDINAL_POSITION LIMIT 1025";
 pub(super) const INDEXES: &str =
     "SELECT INDEX_NAME, COLUMN_NAME, SEQ_IN_INDEX FROM information_schema.STATISTICS
     WHERE BINARY TABLE_SCHEMA = BINARY ? AND BINARY TABLE_NAME = BINARY ?
+    AND FIND_IN_SET(BINARY INDEX_NAME,?)>0
     ORDER BY BINARY INDEX_NAME, SEQ_IN_INDEX LIMIT 1025";
 pub(super) type ColRow = (String, String, String);
 pub(super) type IndexRow = (String, Option<String>, u64);
 
 pub(super) fn project(
     name: &str,
-    allowed: &BTreeSet<String>,
+    allowed: &MySqlTable,
     cols: Vec<ColRow>,
     indexes: Vec<IndexRow>,
 ) -> Result<Option<Table>, RemoteFault> {
@@ -27,7 +30,7 @@ pub(super) fn project(
     }
     let columns: Vec<_> = cols
         .into_iter()
-        .filter(|(n, _, _)| allowed.contains(n))
+        .filter(|(n, _, _)| allowed.columns.contains(n))
         .map(|(name, sql_type, nullable)| {
             if sql_type.len() > 64
                 || !sql_type
@@ -58,7 +61,7 @@ pub(super) fn project(
         .into_iter()
         .filter_map(|(name, parts)| {
             // Never advertise a partial composite index, or expressions involving invisible columns.
-            if name.len() > 64 || name.chars().any(char::is_control) {
+            if !allowed.indexes.contains(&name) {
                 return None;
             }
             let keys = parts
@@ -85,7 +88,10 @@ mod tests {
     use super::*;
     #[test]
     fn composite_and_expression_indexes_cannot_disclose_hidden_columns() {
-        let allow = BTreeSet::from(["id".into()]);
+        let allow = MySqlTable {
+            columns: ["id".into()].into(),
+            indexes: ["PRIMARY".into(), "mixed".into(), "expr".into()].into(),
+        };
         let cols = vec![
             ("id".into(), "bigint".into(), "NO".into()),
             ("private".into(), "varchar".into(), "YES".into()),

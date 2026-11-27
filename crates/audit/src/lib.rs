@@ -162,7 +162,10 @@ impl Entry<'_> {
         json!({
             "schemaVersion":1, "operation":self.report.operation, "diagnosticLayer":layer,
             "host":{"os":std::env::consts::OS,"architecture":std::env::consts::ARCH}, "tools":tools,
-            "targetAlias":self.report.target_alias, "remoteDiagnostic":self.report.resource_scope.map(|_|&self.report.summary),
+            "targetAlias":self.report.target_alias,
+            "resourceId":self.report.resource_scope.map(|s|s.resource),"targetId":self.report.resource_scope.map(|s|s.target),
+            "connection":match &self.report.result {Some(Payload::Connection(c))=>Some(c),_=>None},
+            "metadataTableCount":match &self.report.result {Some(Payload::Schema{tables})=>Some(tables.len()),_=>None}, "remoteDiagnostic":self.report.resource_scope.map(|_|&self.report.summary),
             "taskId":self.template.map(Template::key), "workingDirectory":"<workspace>",
             "command":self.template.map(|t| [vec![t.executable()], t.arguments().to_vec()].concat()),
             "timestampUtc":json!(self.report)["timestampUtc"], "errorCode":self.report.error_code,

@@ -28,7 +28,7 @@ struct ReviewLogins {
     #[cfg(any(windows, target_os = "macos"))]
     native: NativeVault<Store>,
     #[cfg(not(any(windows, target_os = "macos")))]
-    fixture: BTreeMap<ResourceId, (String, String)>,
+    fixture: std::collections::HashMap<ResourceId, (String, String)>,
     reads: Arc<AtomicUsize>,
 }
 impl Logins for ReviewLogins {
@@ -140,7 +140,7 @@ fn review() {
     #[cfg(any(windows, target_os = "macos"))]
     let vault = NativeVault::for_catalogue(store.clone()).unwrap();
     #[cfg(not(any(windows, target_os = "macos")))]
-    let mut entries = BTreeMap::new();
+    let mut entries = std::collections::HashMap::new();
     for target in ["dev", "test"] {
         fixture.edit(Edit::preset(alias(target)).unwrap());
         let marker = format!("{target}_marker");
@@ -191,7 +191,13 @@ fn review() {
             };
             let tables = BTreeMap::from([(
                 marker.clone(),
-                ["id", "name"].into_iter().map(str::to_owned).collect(),
+                MySqlTable {
+                    columns: ["id", "name"].into_iter().map(str::to_owned).collect(),
+                    indexes: ["PRIMARY", "name_idx", "mixed_idx"]
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect(),
+                },
             )]);
             fixture.edit(Edit::MySqlPolicy {
                 target: alias(target),
@@ -295,7 +301,7 @@ fn review() {
                 json!(true)
             }
             "close" => {
-                backend.close();
+                backend.close().unwrap();
                 json!(true)
             }
             "connection_test" | "database_schema" => {
@@ -309,5 +315,5 @@ fn review() {
         );
         std::io::stdout().flush().unwrap();
     }
-    backend.close();
+    backend.close().unwrap();
 }

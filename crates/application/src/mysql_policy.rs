@@ -20,7 +20,11 @@ pub fn public_ca(input: &[u8]) -> Result<String, ErrorCode> {
 pub fn ca_summary(route: &MySqlRoute) -> String {
     route.ca_pem.as_ref().map_or_else(
         || "built-in roots".into(),
-        |ca| format!("{:x}", Sha256::digest(ca.as_bytes())),
+        |ca| {
+            pem::parse(ca)
+                .map(|cert| format!("{:x}", Sha256::digest(cert.contents())))
+                .unwrap_or_else(|_| "invalid certificate".into())
+        },
     )
 }
 fn allowed_ip(ip: IpAddr) -> bool {
@@ -62,13 +66,23 @@ pub fn validate(
     {
         return Err(ErrorCode::InvalidInput);
     }
-    if tables.len() > 32 || tables.values().map(|v| v.len()).sum::<usize>() > 512 {
+    if tables.len() > 32
+        || tables
+            .values()
+            .map(|v| v.columns.len() + v.indexes.len())
+            .sum::<usize>()
+            > 512
+    {
         return Err(ErrorCode::InvalidInput);
     }
     for (t, cols) in tables {
-        if cols.is_empty()
+        if cols.columns.is_empty()
             || TableName::try_from(t.clone()).is_err()
-            || cols.iter().any(|s| TableName::try_from(s.clone()).is_err())
+            || cols
+                .columns
+                .iter()
+                .chain(&cols.indexes)
+                .any(|s| TableName::try_from(s.clone()).is_err())
         {
             return Err(ErrorCode::InvalidInput);
         }

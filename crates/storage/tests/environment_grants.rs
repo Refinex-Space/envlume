@@ -293,7 +293,14 @@ fn mysql_table_edits_revoke_grants_and_route_edits_detach_credentials() {
             ips: [ip.parse().unwrap()].into(),
             ca_pem: None,
         },
-        tables: [("orders".into(), [col.into()].into())].into(),
+        tables: [(
+            "orders".into(),
+            MySqlTable {
+                columns: [col.into()].into(),
+                indexes: Default::default(),
+            },
+        )]
+        .into(),
     };
     edit(&store, id, &root, policy("127.0.0.1", "id")).unwrap();
     edit(&store, id, &root, grant()).unwrap();

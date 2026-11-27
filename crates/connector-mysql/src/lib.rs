@@ -121,6 +121,9 @@ impl<L: Logins> MySqlConnector<L> {
         options: OptsBuilder,
     ) -> Result<Pool, Fault> {
         let mut slots = self.slots.lock().map_err(|_| Fault::Service)?;
+        if self.inflight.is_closed() {
+            return Err(Fault::Service);
+        }
         if slots.get(&key).is_none_or(|s| s.pool.is_none())
             && slots.values().filter(|s| s.pool.is_some()).count() >= SLOTS
         {
@@ -145,6 +148,9 @@ impl<L: Logins> MySqlConnector<L> {
     }
     fn mark(&self, key: PoolIdentity, r: &ResourceBinding, ok: bool) {
         if let Ok(mut slots) = self.slots.lock() {
+            if self.inflight.is_closed() {
+                return;
+            }
             if slots.len() >= HEALTH_RECORDS
                 && !slots.contains_key(&key)
                 && let Some(old) = slots
@@ -258,9 +264,21 @@ async fn rows<T: mysql_async::prelude::FromRow>(
     stmt: &str,
     db: &str,
     table: &str,
+    names: &std::collections::BTreeSet<String>,
     remaining: &mut usize,
 ) -> Result<Vec<T>, Fault> {
-    let mut stream = conn.exec_iter(stmt, (db, table)).await.map_err(classify)?;
+    if names.is_empty() {
+        return Ok(vec![]);
+    }
+    let names = names
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut stream = conn
+        .exec_iter(stmt, (db, table, names))
+        .await
+        .map_err(classify)?;
     let mut out = Vec::new();
     while let Some(row) = stream.next().await.map_err(classify)? {
         if out.len() >= 1024 {
@@ -285,7 +303,9 @@ fn classify(error: Driver) -> Fault {
         Driver::Io(IoError::Io(e)) if e.kind() == std::io::ErrorKind::InvalidData => Fault::Tls,
         Driver::Io(IoError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut => Fault::Timeout,
         Driver::Io(_) => Fault::Tcp,
-        Driver::Server(e) if matches!(e.code, 1044 | 1045 | 1142 | 1143) => Fault::Authentication,
+        Driver::Server(e) if e.code == 1045 => Fault::Authentication,
+        Driver::Server(e) if matches!(e.code, 1044 | 1142 | 1143) => Fault::Privileges,
+        Driver::Driver(DriverError::CantParseServerVersion { .. }) => Fault::Version,
         Driver::Driver(DriverError::PacketTooLarge) => Fault::Limit,
         _ => Fault::Service,
     }
@@ -323,18 +343,33 @@ impl<L: Logins> DatabaseBackend for MySqlConnector<L> {
                     continue;
                 }
                 r.binding().map_err(Fault::Access)?;
-                let cols = rows(conn, metadata::COLUMNS, db, name, &mut remaining).await?;
+                let cols = rows(
+                    conn,
+                    metadata::COLUMNS,
+                    db,
+                    name,
+                    &allowed.columns,
+                    &mut remaining,
+                )
+                .await?;
                 r.binding().map_err(Fault::Access)?;
-                let indexes = rows(conn, metadata::INDEXES, db, name, &mut remaining).await?;
+                let indexes = rows(
+                    conn,
+                    metadata::INDEXES,
+                    db,
+                    name,
+                    &allowed.indexes,
+                    &mut remaining,
+                )
+                .await?;
                 if let Some(table) = metadata::project(name, allowed, cols, indexes)? {
                     tables.push(table);
                 }
             }
-            if serde_json::to_vec(&tables)
-                .map_err(|_| Fault::Service)?
-                .len()
-                > RESPONSE_BYTES - 1024
-            {
+            // MCP returns structuredContent and its escaped text representation.
+            let encoded = serde_json::to_string(&tables).map_err(|_| Fault::Service)?;
+            let text = serde_json::to_vec(&encoded).map_err(|_| Fault::Service)?;
+            if encoded.len() + text.len() > RESPONSE_BYTES - 4096 {
                 return Err(Fault::Limit);
             }
             Ok(tables)
@@ -363,19 +398,29 @@ impl<L: Logins> DatabaseBackend for MySqlConnector<L> {
                 }
             })
     }
-    fn close(&self) {
+    fn close(&self) -> Result<(), Fault> {
+        self.inflight.close();
         let pools: Vec<_> = self
             .slots
             .lock()
-            .map(|mut s| s.drain().filter_map(|(_, s)| s.pool).collect())
-            .unwrap_or_default();
-        if let Ok(rt) = runtime() {
-            rt.block_on(async {
-                for pool in pools {
-                    let _ = timeout(BUDGET, pool.disconnect()).await;
+            .map_err(|_| Fault::Service)?
+            .drain()
+            .filter_map(|(_, s)| s.pool)
+            .collect();
+        runtime()?.block_on(async {
+            let mut closing = tokio::task::JoinSet::new();
+            for p in pools {
+                closing.spawn(p.disconnect());
+            }
+            timeout(BUDGET, async {
+                while let Some(r) = closing.join_next().await {
+                    r.map_err(|_| Fault::Service)?.map_err(classify)?;
                 }
-            });
-        }
+                Ok(())
+            })
+            .await
+            .map_err(|_| Fault::Timeout)?
+        })
     }
 }
 impl<L> Drop for MySqlConnector<L> {

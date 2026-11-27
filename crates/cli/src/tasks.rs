@@ -414,7 +414,11 @@ impl Tasks {
     pub(super) fn environments(&self, args: Value) -> Report {
         use envlume_application::remote::DatabaseBackend;
         if let Some(Ok(registry)) = self.registry.get() {
-            let _visibility = self.remote_visibility();
+            if let Err(e) = self.remote_visibility() {
+                let mut r = Report::new("environment_list");
+                r.fail(e, e.summary());
+                return r;
+            }
             self.session
                 .environment_health(args, &|id| registry.health(self.binding, id))
         } else {
@@ -437,13 +441,21 @@ impl Tasks {
                 r
             }
         };
+        let mut report = report;
+        if self.actor == Actor::Cli
+            && let Err(fault) = self.close_database()
+        {
+            report.fail(fault.code(), fault.summary());
+            report.evidence_id = None;
+        }
         self.inspect(report)
     }
-    pub(super) fn close_database(&self) {
+    fn close_database(&self) -> std::result::Result<(), envlume_application::remote::RemoteFault> {
         use envlume_application::remote::DatabaseBackend;
         if let Some(Ok(r)) = self.registry.get() {
-            r.close();
+            r.close()?;
         }
+        Ok(())
     }
     pub fn inspect(&self, mut report: Report) -> Report {
         if let Err(error) = self.store.record(

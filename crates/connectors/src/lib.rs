@@ -44,7 +44,7 @@ impl DatabaseBackend for Registry {
     fn health(&self, binding: envlume_domain::BindingId, r: ResourceId) -> Health {
         self.mysql.health(binding, r)
     }
-    fn close(&self) {
+    fn close(&self) -> Result<(), RemoteFault> {
         self.mysql.close()
     }
 }

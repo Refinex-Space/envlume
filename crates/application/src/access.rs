@@ -163,7 +163,15 @@ impl<R: Repository> Session<R> {
         backend: &dyn crate::remote::DatabaseBackend,
     ) -> Report {
         let mut fault = None;
-        let _visibility = self.refresh_remote(Some(backend));
+        if let Err(code) = self.refresh_remote(Some(backend)) {
+            let mut report = Report::new(match name {
+                "connection_test" => "connection_test",
+                "database_schema" => "database_schema",
+                _ => "unknown",
+            });
+            report.fail(code, code.summary());
+            return report;
+        }
         let mut report = self.dispatch(name, args, |op, request| {
             let (endpoint, table, is_test) = match op {
                 Resolved::Connect(r) => (r, None, true),

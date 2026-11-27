@@ -38,7 +38,6 @@ pub fn run(
             Actor::Cli,
         )?;
         let report = access.database(name, params);
-        access.close_database();
         Ok(report)
     })();
     let report = result.unwrap_or_else(|e| {

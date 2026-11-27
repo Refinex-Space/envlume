@@ -149,7 +149,7 @@ def mysql_fixture(base):
         port = int(
             run(["docker", "port", cid, "3306/tcp"]).decode().strip().split(":")[-1]
         )
-        end = time.monotonic() + 120
+        end = time.monotonic() + seconds0
         while True:
             try:
                 if sql("SELECT @@port") == "3306":
@@ -167,7 +167,7 @@ def mysql_fixture(base):
             marker = target + "_marker"
             sql(f"""CREATE DATABASE {db};
             CREATE TABLE {db}.{marker}(id BIGINT PRIMARY KEY, name VARCHAR(64), hidden_value VARCHAR(32),
-                INDEX name_idx(name), INDEX mixed_idx(name,hidden_value));
+                INDEX name_idx(name), INDEX unlisted_idx(name), INDEX mixed_idx(name,hidden_value));
             CREATE TABLE {db}.hidden_table(id INT PRIMARY KEY);
             CREATE TABLE {db}.db_hidden(id INT PRIMARY KEY);
             CREATE USER '{user}'@'%' IDENTIFIED BY '{pwd}' REQUIRE SSL;
@@ -214,10 +214,18 @@ def mysql_fixture(base):
 
 def binary(package, target, *flags):
     # Decode Cargo's artifact path, including when CARGO_TARGET_DIR or a target triple is set.
-    data = subprocess.check_output(
+    build = subprocess.run(
         ["cargo", "build", "--locked", "--message-format=json", "-p", package, *flags],
         cwd=REPO,
+        stdout=subprocess.PIPE,
     )
+    data = build.stdout
+    if build.returncode:
+        for line in data.splitlines():
+            item = json.loads(line)
+            if item.get("reason") == "compiler-message":
+                print(item["message"]["rendered"])
+        raise RuntimeError("Cargo fixture build failed")
     return next(
         v["executable"]
         for line in data.splitlines()
@@ -241,8 +249,8 @@ def send(proc, msg):
     proc.stdin.flush()
 
 
-def wait_for(check, description):
-    end = time.monotonic() + 12
+def wait_for(check, description, seconds=12):
+    end = time.monotonic() + seconds
     while not check():
         if time.monotonic() > end:
             raise AssertionError(description)
@@ -252,9 +260,9 @@ def wait_for(check, description):
 def review():
     import socket, sys
 
-    exe = binary("envlume","mysql_review","--example","mysql_review")
+    exe = binary("envlume", "mysql_review", "--example", "mysql_review")
     # Using the same signed executable for provisioning and CLI/MCP preserves the native vault ACL.
-    helper = exe if sys.platform=="darwin" else None
+    helper = exe if sys.platform == "darwin" else None
     with (
         tempfile.TemporaryDirectory(prefix="envlume-t11-") as tmp,
         socket.socket() as offline,
@@ -383,6 +391,18 @@ def review():
                     lambda: not (connections("dev") & ids),
                     "retired grant kept its old connection",
                 )
+                # No application calls during this interval. Verify actual server sessions and cached health expire.
+                wait_for(
+                    lambda: not connections("dev") and not connections("test"),
+                    "idle connections exceeded TTL",
+                    40,
+                )
+                idle = request("health")["result"]["result"]["environments"]
+                assert all(
+                    r["health"] == "unknown" for e in idle for r in e["resources"]
+                )
+                assert request("connection_test", args("test"))["result"]["ok"]
+                assert len(connections("test")) == 1
                 request("close")
                 wait_for(
                     lambda: not connections("dev") and not connections("test"),

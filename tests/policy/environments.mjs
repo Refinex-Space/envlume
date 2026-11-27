@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 const [cli, helper] = process.argv.slice(2);
@@ -172,6 +172,44 @@ try {
 		(await call("environment_list")).result.environments,
 		read(),
 	);
+	const file = join(root, "mysql-policy.json");
+	writeFileSync(
+		file,
+		JSON.stringify({
+			ips: ["127.0.0.1"],
+			tables: { orders: { columns: ["id"], indexes: ["PRIMARY"] } },
+		}),
+	);
+	const policy = ["mysql-policy", "dev", "primary-db", file];
+	assert.equal(
+		invoke(["environment", ...policy, ...scope], 3).errorCode,
+		"POLICY_DENIED",
+	);
+	edit(policy);
+	grant("dev", "database.schema");
+	assert.ok((await tools()).includes("database_schema"));
+	assert.equal(
+		(
+			await call("database_schema", {
+				target: "dev",
+				resource: "primary-db",
+				table: "unlisted",
+			})
+		).errorCode,
+		"TARGET_NOT_ALLOWED",
+	);
+	assert.equal(
+		(
+			await call("database_schema", {
+				target: "dev",
+				resource: "primary-db",
+				ips: ["127.0.0.1"],
+			})
+		).errorCode,
+		"INVALID_INPUT",
+	);
+	edit(["revoke", "dev", "primary-db", "database.schema"]);
+	assert.ok(!(await tools()).includes("database_schema"));
 	invoke(["project", "delete", "--project", projectId], 0, true);
 	assert.equal(
 		invoke(["environment", "list", ...scope], 3).errorCode,

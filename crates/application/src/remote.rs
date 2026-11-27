@@ -23,6 +23,8 @@ pub enum RemoteFault {
     Tcp,
     Tls,
     Authentication,
+    Privileges,
+    Version,
     Service,
     Timeout,
     Limit,
@@ -36,7 +38,8 @@ impl RemoteFault {
             Self::Address => ErrorCode::TargetNotAllowed,
             Self::Authentication => ErrorCode::CredentialUnavailable,
             Self::Timeout | Self::Busy => ErrorCode::Timeout,
-            Self::Service => ErrorCode::InternalError,
+            Self::Service | Self::Version => ErrorCode::InternalError,
+            Self::Privileges => ErrorCode::PolicyDenied,
             Self::Limit => ErrorCode::PolicyDenied,
         }
     }
@@ -52,6 +55,10 @@ impl RemoteFault {
             Self::Authentication => {
                 "MySQL rejected the login. Verify the account and its database privileges."
             }
+            Self::Version => {
+                "The MySQL service advertised an unsupported version. Verify the registered service."
+            }
+            Self::Privileges => "Check the MySQL read-only grants for this database.",
             Self::Service => {
                 "MySQL did not complete the metadata operation. Check service health and grants."
             }
@@ -77,5 +84,5 @@ pub trait DatabaseBackend: Send + Sync {
     ) -> Result<Vec<Table>, RemoteFault>;
     fn retain(&self, live: &dyn Fn(PoolIdentity, &ResourceBinding) -> bool);
     fn health(&self, binding: BindingId, resource: ResourceId) -> Health;
-    fn close(&self);
+    fn close(&self) -> Result<(), RemoteFault>;
 }
