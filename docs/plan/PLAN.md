@@ -54,7 +54,7 @@
 
 | 任务卡 | 交付重点 | 前置 | 状态 |
 |---|---|---|---|
-| [T09 落实环境、资源归属与逐请求授权](tasks/T09-target-resource-policy.md) | 目标风险、资源归属与动态 grant | R1 | 待开始 |
+| [T09 落实环境、资源归属与逐请求授权](tasks/T09-target-resource-policy.md) | 目标风险、资源归属与动态 grant | R1 | 已完成（专项通过，全量复验见任务卡） |
 | [T10 接入系统凭据存储与损坏修复](tasks/T10-native-credentials.md) | 两个平台的凭据存储与引用生命周期 | T09 | 待开始 |
 | [T11 实现 MySQL 连接检测与元数据读取](tasks/T11-mysql-connect-schema.md) | TLS、只读账号、池隔离和 schema | T10 | 待开始 |
 | [T12 限制 MySQL 查询并脱敏结果](tasks/T12-mysql-read-query.md) | AST、行列/字节限额与脱敏 | T11 | 待开始 |
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| T09 待开始 | [R1-A01、A02](tasks/R1-toolchain-review.md#执行记录) 已通过。修订 `a22d28d` 在 macOS、Windows 验证 Java 8 成败证据、JDK 17/21 隔离及实时撤权 | 使用 R1 留存的隔离绑定，验证目标、资源归属、风险与逐请求授权 | [T09 落实环境、资源归属与逐请求授权](tasks/T09-target-resource-policy.md) |
+| T10 待开始 | [T09-A01–A03](tasks/T09-target-resource-policy.md#执行记录) 已在修订 `1a4b853` 验证授权矩阵、端点重审和三入口实时撤权 | 在 DEV、TEST 的隔离资源上接入系统凭据存储，核对轮换、损坏修复与清理 | [T10 系统凭据存储与损坏修复](tasks/T10-native-credentials.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 
