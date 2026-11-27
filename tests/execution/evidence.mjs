@@ -143,6 +143,10 @@ try {
 	});
 	const context = await call("project_context", {});
 	assert.ok(context.ok);
+	recordFor(context, "LOCAL_STDIO", "SUCCESS");
+	const localContext = command(["project", "context", ...flag]);
+	assert.deepEqual(localContext.result, context.result);
+	recordFor(localContext, "CLI", "SUCCESS");
 	assert.ok(
 		!(await frame("tools/list", {})).tools.some((t) => t.name === "task_run"),
 	);

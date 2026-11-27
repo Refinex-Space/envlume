@@ -105,7 +105,11 @@ try {
 			"orders",
 		]);
 	}
-	assert.equal((await call("environment_list")).errorCode, "POLICY_DENIED");
+	const deniedList = await call("environment_list");
+	assert.equal(deniedList.errorCode, "POLICY_DENIED");
+	const deniedRecord = invoke(["report", "show", "--request", deniedList.requestId, ...scope]);
+	assert.equal(deniedRecord.actor, "LOCAL_STDIO");
+	assert.equal(deniedRecord.decision, "DENIED");
 	const grant = (target, action) =>
 		edit(["grant", target, "primary-db", action]);
 	grant("dev", "database.schema");

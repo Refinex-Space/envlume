@@ -18,7 +18,7 @@ use envlume_mcp::Resolution;
 use envlume_storage::{Store, StorePaths};
 use std::{ffi::OsString, process::ExitCode};
 
-const USAGE: &str = "Usage: envlume database query <target> <resource> --binding <id> [--json] (SQL on stdin) | envlume connection test <target> <resource> --binding <id> [--json] | envlume database schema <target> <resource> [--table <name>] --binding <id> [--json] | envlume credential set|replace|repair|clear|status|remove-resource <target> <resource> --binding <id> [--json] | envlume credential rebind <target> <destination> <source> --binding <id> [--json] | envlume credential cleanup --binding <id> [--json] | envlume environment list --binding <id> [--json] | envlume environment set|rename|resource|grant|revoke ... --binding <id> | envlume report show --evidence|--request <id> --binding <id> [--json] | envlume report clear --binding <id> [--json] | envlume task list --binding <id> [--json] | envlume task enable <name> --binding <id> [--timeout <seconds>] [--json] | envlume task disable|run|cancel <name> --binding <id> [--json] | envlume --version | envlume doctor [--binding <id> [--profile <name>]] [--json] | envlume toolchain configure --binding <id> --profile <name> [--tool <name> <constraint> [--path <absolute>]]... [--mise] [--json] | envlume project list [--json] | envlume project add <path> [--project <id>] [--json] | envlume project inspect --path <path> [--json] | envlume project revoke --binding <id> [--json] | envlume project delete --project <id> [--json] | envlume mcp --binding <uuid>";
+const USAGE: &str = "Usage: envlume database query <target> <resource> --binding <id> [--json] (SQL on stdin) | envlume connection test <target> <resource> --binding <id> [--json] | envlume database schema <target> <resource> [--table <name>] --binding <id> [--json] | envlume credential set|replace|repair|clear|status|remove-resource <target> <resource> --binding <id> [--json] | envlume credential rebind <target> <destination> <source> --binding <id> [--json] | envlume credential cleanup --binding <id> [--json] | envlume environment list --binding <id> [--json] | envlume environment set|rename|resource|grant|revoke ... --binding <id> | envlume report show --evidence|--request <id> --binding <id> [--json] | envlume report clear --binding <id> [--json] | envlume task list --binding <id> [--json] | envlume task enable <name> --binding <id> [--timeout <seconds>] [--json] | envlume task disable|run|cancel <name> --binding <id> [--json] | envlume --version | envlume doctor [--binding <id> [--profile <name>]] [--json] | envlume toolchain configure --binding <id> --profile <name> [--tool <name> <constraint> [--path <absolute>]]... [--mise] [--json] | envlume project context --binding <id> [--json] | envlume project list [--json] | envlume project add <path> [--project <id>] [--json] | envlume project inspect --path <path> [--json] | envlume project revoke --binding <id> [--json] | envlume project delete --project <id> [--json] | envlume mcp --binding <uuid>";
 
 pub fn run(
     args: &[OsString],
@@ -104,7 +104,15 @@ pub fn run(
     } else if args.first().is_some_and(|s| s == "project") {
         return registration::run(&args[1..], locate);
     } else {
-        eprintln!("{USAGE}");
+        if args.last().is_some_and(|s| s == "--json") {
+            let code = envlume_application::ErrorCode::InvalidInput;
+            let mut report = envlume_application::result::Report::new("unknown");
+            report.fail(code, code.summary());
+            println!("{}", serde_json::json!(report));
+            eprintln!("{}", report.human_text());
+        } else {
+            eprintln!("{USAGE}");
+        }
         return ExitCode::from(2);
     }
     ExitCode::SUCCESS

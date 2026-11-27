@@ -195,8 +195,8 @@ fn execute(
         origin: origin.clone(),
     };
     if operation == ["list"] {
-        let report = Session::from_registration(registry, binding, Actor::Cli)?
-            .environment_list(serde_json::json!({}));
+        let report = super::tasks::Tasks::open(store, binding, Actor::Cli)?
+            .environments(serde_json::json!({}));
         if json {
             println!("{}", serde_json::json!(report));
         } else if let Some(Payload::Environments { environments }) = &report.result {

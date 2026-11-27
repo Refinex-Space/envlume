@@ -20,6 +20,9 @@ const NAME: &str = "project_context";
 
 pub trait BoundProject: Send + Sync {
     fn visible(&self) -> Result<bool, ErrorCode>;
+    fn record_rejection(&self, report: Report) -> Report {
+        report
+    }
     fn call(&self, arguments: Value) -> Report;
     fn task_visibility(&self) -> Result<(bool, bool), ErrorCode> {
         Ok((false, false))
@@ -292,7 +295,13 @@ impl ServerHandler for Server {
                     .map_err(|_| rejection(ErrorCode::InternalError))?
                     .ok_or_else(|| ErrorData::invalid_params("Unknown tool", None))?
             }
-            _ => return Err(ErrorData::invalid_params("Unknown tool", None)),
+            _ => {
+                project.visible().map_err(rejection)?;
+                let mut r = Report::new("unknown");
+                r.fail(ErrorCode::InvalidInput, ErrorCode::InvalidInput.summary());
+                let r = project.record_rejection(r);
+                return Err(ErrorData::invalid_params("Unknown tool", Some(json!(r))));
+            }
         };
         let ok = value["ok"] == true;
         let result = if ok {

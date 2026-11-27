@@ -413,17 +413,18 @@ impl Tasks {
     }
     pub(super) fn environments(&self, args: Value) -> Report {
         use envlume_application::remote::DatabaseBackend;
-        if let Some(Ok(registry)) = self.registry.get() {
+        let report = if let Some(Ok(registry)) = self.registry.get() {
             if let Err(e) = self.remote_visibility() {
                 let mut r = Report::new("environment_list");
                 r.fail(e, e.summary());
-                return r;
+                return self.inspect(r);
             }
             self.session
                 .environment_health(args, &|id| registry.health(self.binding, id))
         } else {
             self.session.environment_list(args)
-        }
+        };
+        self.inspect(report)
     }
     pub(super) fn database(&self, name: &'static str, args: Value) -> Report {
         let registry = self.registry.get_or_init(|| {

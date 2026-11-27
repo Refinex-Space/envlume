@@ -178,6 +178,11 @@ await session(
       assert.equal(invalid.result.structuredContent.errorCode, "INVALID_INPUT");
     }
     assert.ok((await request("tools/call", params("task_run", {}))).error);
+    const unknown = await request("tools/call", params("get_secret", {}));
+    assert.equal(unknown.error.code, -32602);
+    assert.equal(unknown.error.data.operation, "unknown");
+    assert.equal(unknown.error.data.errorCode, "INVALID_INPUT");
+    assert.match(unknown.error.data.requestId, /^[0-9a-f-]{36}$/);
     localProcessOnly(pid);
   },
   0,

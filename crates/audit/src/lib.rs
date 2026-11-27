@@ -106,13 +106,16 @@ impl Entry<'_> {
         let r = self.outcome;
         let layer = match self.report.error_code {
             Some(ErrorCode::NetworkUnreachable) => "network",
-            Some(ErrorCode::CredentialUnavailable) => "credential",
-            Some(ErrorCode::QueryNotAllowed) => "policy",
+            Some(ErrorCode::CredentialUnavailable) if self.report.resource_scope.is_none() => {
+                "host"
+            }
+            Some(ErrorCode::QueryNotAllowed | ErrorCode::TargetNotAllowed) => "policy",
             _ if self.report.resource_scope.is_some() => "service",
             Some(ErrorCode::ToolchainMissing) => "toolchain",
             Some(ErrorCode::ProjectNotTrusted | ErrorCode::BindingRevoked) => "workspace",
             Some(ErrorCode::PolicyDenied) if r.is_none() => "policy",
             Some(ErrorCode::InternalError) => "host",
+            _ if self.report.operation == "project_context" => "workspace",
             _ if self.report.operation == "toolchain_doctor" => "toolchain",
             _ => "workflow",
         };

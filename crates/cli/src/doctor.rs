@@ -24,7 +24,7 @@ const INPUT: Failure = Failure::Input(
     "Check doctor/profile arguments, tool names, absolute paths and numeric version constraints.",
 );
 impl Failure {
-    fn diagnostic(self) -> (serde_json::Value, &'static str, u8) {
+    fn diagnostic(&self) -> (serde_json::Value, &'static str, u8) {
         match self {
             Self::Input(msg) => (json!("INVALID_INPUT"), msg, 2),
             Self::Application(code) => (json!(code), code.summary(), code.exit_code()),
@@ -230,7 +230,15 @@ pub fn run(
         Ok(code) => ExitCode::from(code),
         Err(failure) => {
             let (code, summary, exit) = failure.diagnostic();
-            if machine {
+            if machine && args.first().is_some_and(|s| s == "doctor") && args.len() > 1 {
+                let mut report = envlume_application::result::Report::new("toolchain_doctor");
+                let reason = match failure {
+                    Failure::Application(code) => code,
+                    _ => ErrorCode::InvalidInput,
+                };
+                report.fail(reason, summary);
+                println!("{}", json!(report));
+            } else if machine {
                 println!(
                     "{}",
                     json!({"schemaVersion":1,"errorCode":code,"summary":summary})

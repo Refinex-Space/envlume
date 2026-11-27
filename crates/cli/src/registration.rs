@@ -39,11 +39,14 @@ pub(super) fn endpoint(
     Tasks::open(store, id, actor)
 }
 impl BoundProject for Tasks {
+    fn record_rejection(&self, report: Report) -> Report {
+        self.inspect(report)
+    }
     fn visible(&self) -> Result<bool, ErrorCode> {
         self.session.can_inspect_project()
     }
     fn call(&self, arguments: Value) -> Report {
-        self.session.project_context(arguments)
+        self.inspect(self.session.project_context(arguments))
     }
     fn environment_visible(&self) -> Result<bool, ErrorCode> {
         self.session.can_inspect_environments()
@@ -170,6 +173,49 @@ pub fn run(
         Some((last, rest)) if last == "--json" => (rest, true),
         _ => (args, false),
     };
+    if args.first().is_some_and(|s| s == "context") {
+        let result = (|| {
+            let [_, flag, raw] = args else {
+                return Err(ErrorCode::InvalidInput);
+            };
+            if flag != "--binding" {
+                return Err(ErrorCode::InvalidInput);
+            }
+            let id = BindingId(
+                raw.to_str()
+                    .and_then(|s| s.parse().ok())
+                    .ok_or(ErrorCode::InvalidInput)?,
+            );
+            Ok(endpoint(locate(), id, Actor::Cli)?.call(json!({})))
+        })();
+        let report = result.unwrap_or_else(|code: ErrorCode| {
+            let mut report = Report::new("project_context");
+            report.fail(code, code.summary());
+            report
+        });
+        if json_mode {
+            println!("{}", json!(report));
+        } else if let Some(envlume_application::result::Payload::Project(p)) = &report.result {
+            println!(
+                "{} ({})",
+                p.project.replace(char::is_control, " "),
+                p.workspace
+            );
+            println!(
+                "Targets: {}",
+                p.targets
+                    .iter()
+                    .map(|t| t.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            println!("Capabilities: {}", p.capabilities.join(", "));
+            println!("{}", report.human_text());
+        } else {
+            eprintln!("{}", report.human_text());
+        }
+        return report.exit_code().into();
+    }
     match execute(args, locate) {
         Ok(value) => {
             if json_mode {
