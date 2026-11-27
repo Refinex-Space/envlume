@@ -1,6 +1,6 @@
 {
   "identifier": "main",
-  "description": "Only the local main window may read the project catalogue.",
+  "description": "The local main window may read projects and the selected binding’s visible environment aliases.",
   "windows": ["main"],
-  "permissions": ["allow-list-projects"]
+  "permissions": ["allow-list-projects", "allow-list-environments"]
 }

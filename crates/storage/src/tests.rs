@@ -75,7 +75,7 @@ fn fresh_schema_enforces_relationships_business_keys_and_sizes() {
     .unwrap();
     for sql in [
         "UPDATE resource_bindings SET target_id=randomblob(16)",
-        "INSERT INTO resource_bindings SELECT randomblob(16),target_id,alias,kind,host,port,tls_mode,credential_ref,policy_labels,status FROM resource_bindings",
+        "INSERT INTO resource_bindings(id,target_id,alias,kind,host,port,tls_mode,credential_ref,policy_labels,status) SELECT randomblob(16),target_id,alias,kind,host,port,tls_mode,credential_ref,policy_labels,status FROM resource_bindings",
         "UPDATE resource_bindings SET alias='../../outside'",
         "UPDATE projects SET id=X'01'",
         "UPDATE projects SET name=hex(zeroblob(100))",
@@ -445,4 +445,52 @@ fn migration_preserves_existing_evidence_and_its_binding() {
         AND request_id=?2 AND evidence_id=?3 AND exit_code=1 AND decision='FAILED' AND actor='CLI' AND details_json IS NULL)",
         rusqlite::params![binding.0,request.0,evidence.0],|r|r.get(0)).unwrap();
     assert!(preserved);
+}
+
+#[test]
+fn legacy_resources_keep_metadata_and_references_but_require_new_approval() {
+    let (_temp, paths) = isolated();
+    let db = previous(&paths);
+    let binding = BindingId(BINDING.parse().unwrap());
+    db.execute(
+        "INSERT INTO workspace_bindings(id,project_id,alias,canonical_path,trust_state,created_at)
+                SELECT ?1,id,'fixture','fixture','TRUSTED',1 FROM projects",
+        [binding.0],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO capability_grants(id,project_id,binding_id,target_id,resource_id,capability)
+                SELECT randomblob(16),t.project_id,?1,t.id,r.id,'database.read'
+                FROM resource_bindings r JOIN environment_targets t ON r.target_id=t.id",
+        [binding.0],
+    )
+    .unwrap();
+    drop(db);
+    Store::open(paths.clone()).unwrap();
+    let db = connect(&paths.database(), false).unwrap();
+    let intact = db
+        .query_row(
+            "SELECT host,credential_ref,confirmed_at_ms IS NULL FROM resource_bindings",
+            [],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, bool>(2)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        intact,
+        ("fixture.invalid".into(), "fixture-ref-1".into(), true)
+    );
+    assert!(
+        db.query_row(
+            "SELECT revoked_at IS NOT NULL FROM capability_grants WHERE capability='database.read'",
+            [],
+            |r| r.get::<_, bool>(0)
+        )
+        .unwrap()
+    );
 }

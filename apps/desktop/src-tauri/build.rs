@@ -1,8 +1,7 @@
 fn main() {
-    tauri_build::try_build(
-        tauri_build::Attributes::new()
-            .app_manifest(tauri_build::AppManifest::new().commands(&["list_projects"])),
-    )
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
+        tauri_build::AppManifest::new().commands(&["list_projects", "list_environments"]),
+    ))
     .expect("build desktop command permissions");
 
     // tauri-winres links the compiled application manifest only into Cargo bins.

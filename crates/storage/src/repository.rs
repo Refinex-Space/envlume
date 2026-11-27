@@ -108,7 +108,7 @@ pub(super) fn read_snapshot(conn: &Connection, id: BindingId) -> Decode<Option<B
             })
         })?
         .collect::<Decode<Vec<_>>>()?;
-    let sql = "SELECT r.id,r.target_id,r.alias,r.kind,r.host,r.port,r.tls_mode,r.credential_ref,r.policy_labels,r.status
+    let sql = "SELECT r.id,r.target_id,r.alias,r.kind,r.host,r.port,r.tls_mode,r.credential_ref,r.policy_labels,r.status,r.database_name,r.confirmed_at_ms IS NOT NULL
         FROM resource_bindings r JOIN environment_targets t ON t.id=r.target_id WHERE t.project_id=?1 ORDER BY r.id";
     let resources = conn
         .prepare(sql)?
@@ -132,6 +132,8 @@ pub(super) fn read_snapshot(conn: &Connection, id: BindingId) -> Decode<Option<B
                 policy_labels: serde_json::from_str(&r.get::<_, String>(8)?)
                     .map_err(|_| invalid())?,
                 status: status(r, 9)?,
+                database: r.get(10)?,
+                endpoint_confirmed: r.get(11)?,
             })
         })?
         .collect::<Decode<Vec<_>>>()?;

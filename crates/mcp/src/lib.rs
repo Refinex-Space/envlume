@@ -32,6 +32,12 @@ pub trait BoundProject: Send + Sync {
     ) -> Option<Value> {
         None
     }
+    fn environment_visible(&self) -> Result<bool, ErrorCode> {
+        Ok(false)
+    }
+    fn environments(&self, _: Value) -> Option<Report> {
+        None
+    }
     fn doctor_visible(&self) -> Result<bool, ErrorCode> {
         Ok(false)
     }
@@ -150,6 +156,16 @@ impl ServerHandler for Server {
         } else {
             vec![]
         };
+        if self.project()?.environment_visible().map_err(rejection)? {
+            tools.push(Tool::new(
+                "environment_list",
+                "List permitted target and resource aliases.",
+                json!({"type":"object","properties":{},"required":[],"additionalProperties":false})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ));
+        }
         if self.project()?.doctor_visible().map_err(rejection)? {
             let schema = serde_json::Map::from_iter([
                 ("type".into(), json!("object")),
@@ -192,6 +208,11 @@ impl ServerHandler for Server {
         let arguments = Value::Object(params.arguments.unwrap_or_default());
         let value = match params.name.as_ref() {
             NAME => json!(project.call(arguments)),
+            "environment_list" => json!(
+                project
+                    .environments(arguments)
+                    .ok_or_else(|| ErrorData::invalid_params("Unknown tool", None))?
+            ),
             "task_list" | "task_run" => {
                 let project = project.clone();
                 tokio::task::spawn_blocking(move || {

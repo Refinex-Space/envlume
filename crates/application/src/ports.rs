@@ -19,7 +19,10 @@ pub struct BindingSnapshot {
 
 impl BindingSnapshot {
     pub fn has_grant(&self, capability: Capability, at: UtcDateTime) -> bool {
-        self.grants.iter().any(|grant| {
+        self.live_grant(capability, at).is_some()
+    }
+    pub fn live_grant(&self, capability: Capability, at: UtcDateTime) -> Option<&CapabilityGrant> {
+        self.grants.iter().find(|grant| {
             grant.binding_id == self.binding.id
                 && grant.capability == capability
                 && grant.revoked_at.is_none()
@@ -42,10 +45,42 @@ impl<R: Repository + ?Sized> Repository for &R {
 /// holding just an alias, a credential reference or a local record cannot mint it.
 pub struct AuthorizedResource<'a> {
     pub(crate) binding: &'a ResourceBinding,
+    pub(crate) request: &'a Authorized<'a>,
+    pub(crate) reload: &'a dyn Fn() -> Result<BindingSnapshot, ErrorCode>,
 }
 impl AuthorizedResource<'_> {
-    pub fn binding(&self) -> &ResourceBinding {
-        self.binding
+    /// Call immediately before reading the credential reference or using the endpoint.
+    /// A grant replaced while the request was queued is a different approval.
+    pub fn binding(&self) -> Result<&ResourceBinding, ErrorCode> {
+        let cap = self.request.capability();
+        let (action, scope) =
+            envlume_policy::RemoteAction::from_capability(cap).ok_or(ErrorCode::PolicyDenied)?;
+        let original = self.request.snapshot();
+        let latest = (self.reload)()?;
+        let now = UtcDateTime::now();
+        let granted = original
+            .live_grant(cap, now)
+            .ok_or(ErrorCode::PolicyDenied)?;
+        if !latest
+            .live_grant(cap, now)
+            .is_some_and(|g| g.id == granted.id)
+        {
+            return Err(ErrorCode::PolicyDenied);
+        }
+        let target = latest
+            .targets
+            .iter()
+            .find(|t| t.id == scope.target && t.project_id == latest.project.id)
+            .ok_or(ErrorCode::TargetNotAllowed)?;
+        let resource = latest
+            .resources
+            .iter()
+            .find(|r| r.id == scope.resource && action.permits(target, r))
+            .ok_or(ErrorCode::TargetNotAllowed)?;
+        if resource != self.binding || !original.targets.iter().any(|t| t == target) {
+            return Err(ErrorCode::TargetNotAllowed);
+        }
+        Ok(self.binding)
     }
 }
 

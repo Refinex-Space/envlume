@@ -53,7 +53,8 @@ fn main() -> ExitCode {
         rusqlite::params![id.0, work.path().to_str().unwrap()],
     )
     .unwrap();
-    db.execute_batch("INSERT INTO capability_grants(id,project_id,binding_id,capability)
+    db.execute_batch("UPDATE resource_bindings SET confirmed_at_ms=1;
+        INSERT INTO capability_grants(id,project_id,binding_id,capability)
         SELECT randomblob(16),project_id,id,'project.inspect' FROM workspace_bindings;
         INSERT INTO capability_grants(id,project_id,binding_id,target_id,resource_id,capability)
         SELECT randomblob(16),b.project_id,b.id,r.target_id,r.id,'resource.connect'

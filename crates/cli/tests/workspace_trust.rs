@@ -40,6 +40,7 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
     });
     let action = args.get(1).and_then(|v| v.to_str());
     let word = match (args.first().and_then(|v| v.to_str()), action) {
+        (Some("environment"), _) => "confirm",
         (Some("task"), Some("enable")) => "enable",
         (Some("task"), Some("run")) => "run",
         (_, Some("delete")) => "delete",
@@ -144,7 +145,8 @@ fn main() -> ExitCode {
         return approve(Path::new(&args[1]), &args[2..]);
     }
     if args.first().is_some_and(|s| {
-        s == "report"
+        s == "environment"
+            || s == "report"
             || s == "project"
             || s == "mcp"
             || s == "doctor"
@@ -169,6 +171,7 @@ fn main() -> ExitCode {
         "../../tests/toolchain/doctor.mjs",
         "../../tests/execution/tasks.mjs",
         "../../tests/execution/evidence.mjs",
+        "../../tests/policy/environments.mjs",
     ] {
         let script = Path::new(env!("CARGO_MANIFEST_DIR")).join(script);
         let status = Command::new("node")

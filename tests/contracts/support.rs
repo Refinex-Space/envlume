@@ -64,6 +64,8 @@ pub fn state() -> BindingSnapshot {
         host: "private.invalid".into(),
         port: 3306,
         tls: TlsMode::VerifyIdentity,
+        endpoint_confirmed: true,
+        database: Some("orders".into()),
         credential_ref: Some(CredentialRef("fixture-reference".into())),
         policy_labels: vec![],
         status: Status::Active,

@@ -1,5 +1,6 @@
 use crate::{input::ToolCall, ports::*, result::*};
 use envlume_domain::*;
+use envlume_policy::RemoteAction;
 use serde_json::Value;
 use std::time::Instant;
 
@@ -65,13 +66,29 @@ impl<R: Repository> Session<R> {
 
     pub fn invoke(&self, cases: &impl UseCases, name: &str, arguments: Value) -> Report {
         self.dispatch(name, arguments, |operation, request| {
-            operation.run(cases, request)
+            operation.run(cases, request, &|| self.snapshot())
         })
     }
 
     pub fn project_context(&self, arguments: Value) -> Report {
         self.dispatch("project_context", arguments, |_, request| {
             Ok((Payload::Project(project_summary(request.snapshot())), None))
+        })
+    }
+
+    pub fn can_inspect_environments(&self) -> Result<bool, ErrorCode> {
+        Ok(self
+            .snapshot()?
+            .has_grant(Capability::EnvironmentInspect, UtcDateTime::now()))
+    }
+    pub fn environment_list(&self, arguments: Value) -> Report {
+        self.dispatch("environment_list", arguments, |_, request| {
+            Ok((
+                Payload::Environments {
+                    environments: crate::environments::visible(request.snapshot()),
+                },
+                None,
+            ))
         })
     }
 
@@ -179,15 +196,6 @@ fn selected_profile<'a>(
         .ok_or(ErrorCode::ToolchainMissing)
 }
 
-fn remote_enabled(t: &EnvironmentTarget) -> bool {
-    t.status == Status::Active && t.kind != EnvironmentKind::Prod && t.risk != RiskLevel::Critical
-}
-fn query_enabled(t: &EnvironmentTarget) -> bool {
-    remote_enabled(t)
-        && matches!(t.kind, EnvironmentKind::Dev | EnvironmentKind::Test)
-        && t.risk != RiskLevel::High
-}
-
 fn project_summary(state: &BindingSnapshot) -> ProjectSummary {
     let now = UtcDateTime::now();
     let mut targets = Vec::new();
@@ -199,37 +207,32 @@ fn project_summary(state: &BindingSnapshot) -> ProjectSummary {
         {
             continue;
         }
-        match grant.capability {
-            Capability::TaskRun(id)
-                if !state.tasks.iter().any(|t| {
-                    t.id == id
-                        && t.project_id == state.project.id
-                        && t.enabled
-                        && t.binding_id.is_none_or(|b| b == state.binding.id)
-                }) =>
+        if let Capability::TaskRun(id) = grant.capability
+            && !state.tasks.iter().any(|t| {
+                t.id == id
+                    && t.project_id == state.project.id
+                    && t.enabled
+                    && t.binding_id.is_none_or(|b| b == state.binding.id)
+            })
+        {
+            continue;
+        }
+        if let Some((action, scope)) = RemoteAction::from_capability(grant.capability) {
+            let Some(target) = state
+                .targets
+                .iter()
+                .find(|t| t.project_id == state.project.id && t.id == scope.target)
+            else {
+                continue;
+            };
+            if !state
+                .resources
+                .iter()
+                .any(|r| r.id == scope.resource && action.permits(target, r))
             {
                 continue;
             }
-            Capability::DatabaseSchema(scope)
-            | Capability::DatabaseRead(scope)
-            | Capability::ResourceConnect(scope) => {
-                let Some(target) = state.targets.iter().find(|t| {
-                    t.id == scope.target && t.project_id == state.project.id && remote_enabled(t)
-                }) else {
-                    continue;
-                };
-                if matches!(grant.capability, Capability::DatabaseRead(_)) && !query_enabled(target)
-                {
-                    continue;
-                }
-                if !state.resources.iter().any(|r| {
-                    r.target_id == target.id && r.id == scope.resource && r.status == Status::Active
-                }) {
-                    continue;
-                }
-                targets.push(target.alias.clone());
-            }
-            _ => (),
+            targets.push(target.alias.clone());
         }
         capabilities.push(grant.capability.wire_name());
     }
@@ -270,7 +273,7 @@ enum Resolved<'a> {
 impl<'a> Resolved<'a> {
     fn resolve(call: &'a ToolCall, state: &'a BindingSnapshot) -> Result<Self, ErrorCode> {
         let project = state.project.id;
-        let remote = |target: &Alias, resource: &Alias| {
+        let remote = |target: &Alias, resource: &Alias, action: RemoteAction| {
             let target = state
                 .targets
                 .iter()
@@ -278,15 +281,13 @@ impl<'a> Resolved<'a> {
                     t.project_id == project && t.alias == *target && t.status == Status::Active
                 })
                 .ok_or(ErrorCode::TargetNotAllowed)?;
-            if !remote_enabled(target) {
+            if !action.allowed(&target.kind, target.risk) {
                 return Err(ErrorCode::TargetNotAllowed);
             }
             let resource = state
                 .resources
                 .iter()
-                .find(|r| {
-                    r.target_id == target.id && r.alias == *resource && r.status == Status::Active
-                })
+                .find(|r| r.alias == *resource && action.permits(target, r))
                 .ok_or(ErrorCode::TargetNotAllowed)?;
             Ok(Remote { target, resource })
         };
@@ -307,15 +308,15 @@ impl<'a> Resolved<'a> {
                     })
                     .ok_or(ErrorCode::PolicyDenied)?,
             ),
-            ToolCall::ConnectionTest(i) => Self::Connect(remote(&i.target, &i.resource)?),
-            ToolCall::DatabaseSchema(i) => {
-                Self::Schema(remote(&i.target, &i.resource)?, i.table.as_ref())
+            ToolCall::ConnectionTest(i) => {
+                Self::Connect(remote(&i.target, &i.resource, RemoteAction::Connect)?)
             }
+            ToolCall::DatabaseSchema(i) => Self::Schema(
+                remote(&i.target, &i.resource, RemoteAction::Schema)?,
+                i.table.as_ref(),
+            ),
             ToolCall::DatabaseQuery(i) => {
-                let remote = remote(&i.target, &i.resource)?;
-                if !query_enabled(remote.target) {
-                    return Err(ErrorCode::TargetNotAllowed);
-                }
+                let remote = remote(&i.target, &i.resource, RemoteAction::Read)?;
                 Self::Query(remote, &i.sql)
             }
         })
@@ -342,15 +343,28 @@ impl<'a> Resolved<'a> {
         self,
         cases: &impl UseCases,
         request: &Authorized<'_>,
+        reload: &dyn Fn() -> Result<BindingSnapshot, ErrorCode>,
     ) -> UseCaseResult<(Payload, Option<EvidenceId>)> {
         Ok(match self {
             Self::Project => (Payload::Project(cases.project_context(request)?), None),
-            Self::Environments => (
-                Payload::Environments {
-                    environments: cases.environment_list(request)?,
-                },
-                None,
-            ),
+            Self::Environments => {
+                let allowed = crate::environments::visible(request.snapshot());
+                let mut reported = cases.environment_list(request)?;
+                reported.retain_mut(|e| {
+                    let Some(t) = allowed.iter().find(|t| t.target == e.target) else {
+                        return false;
+                    };
+                    e.resources
+                        .retain(|r| t.resources.iter().any(|a| a.alias == r.alias));
+                    !e.resources.is_empty()
+                });
+                (
+                    Payload::Environments {
+                        environments: reported,
+                    },
+                    None,
+                )
+            }
             Self::Doctor(name) => {
                 let profile = selected_profile(request.snapshot(), name)?;
                 (
@@ -375,6 +389,8 @@ impl<'a> Resolved<'a> {
                     request,
                     &AuthorizedResource {
                         binding: r.resource,
+                        request,
+                        reload,
                     },
                 )?;
                 (Payload::Connection(e.result), Some(e.evidence_id))
@@ -385,6 +401,8 @@ impl<'a> Resolved<'a> {
                         request,
                         &AuthorizedResource {
                             binding: r.resource,
+                            request,
+                            reload,
                         },
                         t,
                     )?,
@@ -396,6 +414,8 @@ impl<'a> Resolved<'a> {
                     request,
                     &AuthorizedResource {
                         binding: r.resource,
+                        request,
+                        reload,
                     },
                     sql,
                 )?;

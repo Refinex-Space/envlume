@@ -161,8 +161,8 @@ fn real_context_filters_the_current_grants_and_private_resource_metadata() {
             rusqlite::params![target, bound.project_id.0, alias, kind, status],
         )
         .unwrap();
-        db.execute("INSERT INTO resource_bindings VALUES(?1,?2,'primary-db','MYSQL','internal.invalid',3306,
-            'VERIFY_IDENTITY','private-credential-ref','[]','ACTIVE')",rusqlite::params![resource,target]).unwrap();
+        db.execute("INSERT INTO resource_bindings(id,target_id,alias,kind,host,port,tls_mode,credential_ref,policy_labels,status,confirmed_at_ms) VALUES(?1,?2,'primary-db','MYSQL','internal.invalid',3306,
+            'VERIFY_IDENTITY','private-credential-ref','[]','ACTIVE',1)",rusqlite::params![resource,target]).unwrap();
         if alias != "test" {
             db.execute("INSERT INTO capability_grants(id,project_id,binding_id,target_id,resource_id,capability)
                 VALUES(randomblob(16),?1,?2,?3,?4,'database.schema')",

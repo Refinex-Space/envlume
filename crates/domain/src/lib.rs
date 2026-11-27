@@ -98,7 +98,7 @@ pub enum TlsMode {
 /// A local OS credential-store reference. Never part of an agent response.
 #[derive(Clone, PartialEq, Eq)]
 pub struct CredentialRef(pub String);
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ResourceBinding {
     pub id: ResourceId,
     pub target_id: TargetId,
@@ -108,6 +108,8 @@ pub struct ResourceBinding {
     pub port: u16,
     pub tls: TlsMode,
     pub credential_ref: Option<CredentialRef>,
+    pub endpoint_confirmed: bool,
+    pub database: Option<String>,
     pub policy_labels: Vec<Alias>,
     pub status: Status,
 }
@@ -165,7 +167,7 @@ impl Capability {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityGrant {
     pub id: GrantId,
     pub binding_id: BindingId,

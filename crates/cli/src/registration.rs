@@ -45,6 +45,12 @@ impl BoundProject for Tasks {
     fn call(&self, arguments: Value) -> Report {
         self.session.project_context(arguments)
     }
+    fn environment_visible(&self) -> Result<bool, ErrorCode> {
+        self.session.can_inspect_environments()
+    }
+    fn environments(&self, args: Value) -> Option<Report> {
+        Some(self.session.environment_list(args))
+    }
     fn doctor_visible(&self) -> Result<bool, ErrorCode> {
         self.session.can_inspect_toolchain()
     }

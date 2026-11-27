@@ -808,6 +808,7 @@ name = "envlume-application"
 version = "0.1.0-dev.1"
 dependencies = [
  "envlume-domain",
+ "envlume-policy",
  "envlume-workspace",
  "serde",
  "serde_json",
@@ -829,6 +830,7 @@ name = "envlume-desktop"
 version = "0.1.0-dev.1"
 dependencies = [
  "envlume-application",
+ "envlume-domain",
  "envlume-storage",
  "rusqlite",
  "serde_json",
@@ -874,6 +876,13 @@ dependencies = [
  "rmcp",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "envlume-policy"
+version = "0.1.0-dev.1"
+dependencies = [
+ "envlume-domain",
 ]
 
 [[package]]

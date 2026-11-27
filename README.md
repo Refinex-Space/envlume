@@ -120,6 +120,23 @@ envlume report clear --binding <binding-id> --json
 
 报告包含调用主体、工具版本、固定命令摘要、时间、耗时、退出码和诊断建议。Maven 输出中可识别的 Surefire 汇总会留下测试计数，可和项目的 `target/surefire-reports` 对照。构建返回非零时，CLI 调用可正常完成，报告的 `decision` 为 `FAILED`。取消和缺少工具记为 `SKIPPED`，授权拒绝记为 `DENIED`。记录在活动 SQLite 目录中保留 30 天，读写记录时清理过期项；`report clear` 删除当前绑定的记录。历史查询仅通过本地 CLI 提供。[T08 验收记录](docs/plan/tasks/T08-execution-evidence.md)
 
+### 配置环境与资源
+
+在已登记的工作区根目录执行以下命令。新增目标、配置端点、授予或撤销能力时，核对本机终端的预览并输入 `confirm`。示例使用保留域名，仅配置目录。
+
+```sh
+envlume environment set dev --binding <binding-id>
+envlume environment set qa TEST MEDIUM --binding <binding-id>
+envlume environment resource dev primary-db dev.example.invalid 3306 VERIFY_IDENTITY orders_dev --binding <binding-id>
+envlume environment grant dev primary-db database.schema --ttl 3600 --binding <binding-id>
+envlume environment list --binding <binding-id> --json
+envlume environment revoke dev primary-db database.schema --binding <binding-id>
+```
+
+`set dev|test|staging|prod` 分别采用 LOW、MEDIUM、HIGH、CRITICAL 初始风险；也可显式指定别名、kind 和 risk。端点参数顺序为目标别名、资源别名、主机、端口、TLS 模式和可选的数据库名。TLS 模式接受 `VERIFY_IDENTITY` 或 `DISABLED`。确认提示展示具体端点。省略 `--ttl` 表示持续有效，直到撤销或配置变化。远端授权只发给当前绑定，并授予目录查看能力。
+
+`environment rename <旧别名> <新别名> --binding <binding-id>` 保留语义类别和风险。CLI 的 `environment list --project <project-id> --json` 也会核对当前工作区。MCP 的 `environment_list({})` 和桌面只读 IPC 按相同权限过滤。桌面可在登记目录以 `envlume-desktop --binding <binding-id>` 启动。T09 只做本地配置、授权与目录读取；真实连接测试见 T11。[权限矩阵及交接](docs/plan/tasks/T09-target-resource-policy.md)
+
 ### 构建与验证
 
 以下命令适用于 macOS 终端和 Windows PowerShell。先执行上面的锁定安装，并准备好本机 Maven 3、完整 JDK 与 npm。将 `JAVA_HOME` 指向测试 JDK；全量测试在临时工作区执行一次真实的 Maven 测试和 Node 构建，并从 Maven Central 获取夹具依赖。

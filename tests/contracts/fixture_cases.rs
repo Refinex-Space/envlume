@@ -11,6 +11,8 @@ pub const EVIDENCE: &str = "20000000-0000-4000-8000-000000000001";
 #[derive(Default)]
 pub struct FixtureCases {
     pub calls: Counter<usize>,
+    pub secret_checks: Counter<usize>,
+    pub connections: Counter<usize>,
     pub failure: Counter<Option<ErrorCode>>,
 }
 impl FixtureCases {
@@ -29,47 +31,36 @@ fn executed<T>(result: T) -> Executed<T> {
     }
 }
 
-fn visible_environments(state: &BindingSnapshot) -> Vec<VisibleEnvironment> {
-    let now = UtcDateTime::now();
-    let mut visible = Vec::new();
-    for target in &state.targets {
-        if target.project_id != state.project.id
-            || target.status != Status::Active
-            || target.kind == EnvironmentKind::Prod
-            || target.risk == RiskLevel::Critical
-        {
-            continue;
-        }
-        let mut resources = Vec::new();
-        for resource in &state.resources {
-            let scope = ResourceScope {
-                target: target.id,
-                resource: resource.id,
-            };
-            if resource.target_id == target.id
-                && resource.status == Status::Active
-                && [
-                    Capability::DatabaseSchema(scope),
-                    Capability::DatabaseRead(scope),
-                    Capability::ResourceConnect(scope),
-                ]
-                .into_iter()
-                .any(|c| state.has_grant(c, now))
-            {
-                resources.push(VisibleResource {
-                    alias: resource.alias.clone(),
-                    health: Health::Unknown,
-                });
-            }
-        }
-        if !resources.is_empty() {
-            visible.push(VisibleEnvironment {
-                target: target.alias.clone(),
-                resources,
-            });
-        }
+use envlume_application::environments::visible as visible_environments;
+
+impl SecretStore for FixtureCases {
+    fn check_reference(&self, resource: &AuthorizedResource<'_>) -> Result<(), ErrorCode> {
+        resource.binding()?;
+        self.secret_checks.set(self.secret_checks.get() + 1);
+        Ok(())
     }
-    visible
+}
+impl ResourceConnector for FixtureCases {
+    fn kind(&self) -> ResourceKind {
+        ResourceKind::MySql
+    }
+    fn test_connection(
+        &self,
+        resource: &AuthorizedResource<'_>,
+    ) -> Result<ConnectionResult, ErrorCode> {
+        resource.binding()?;
+        self.connections.set(self.connections.get() + 1);
+        Ok(ConnectionResult {
+            latency_ms: 6,
+            version_summary: "MySQL 8".into(),
+        })
+    }
+}
+impl FixtureCases {
+    fn open(&self, resource: &AuthorizedResource<'_>) -> UseCaseResult<ConnectionResult> {
+        self.check_reference(resource)?;
+        Ok(self.test_connection(resource)?)
+    }
 }
 
 impl UseCases for FixtureCases {
@@ -87,7 +78,24 @@ impl UseCases for FixtureCases {
     }
     fn environment_list(&self, r: &Authorized<'_>) -> UseCaseResult<Vec<VisibleEnvironment>> {
         self.enter()?;
-        Ok(visible_environments(r.snapshot()))
+        // Deliberately return the complete health catalogue. The application must filter this adapter output.
+        let state = r.snapshot();
+        Ok(state
+            .targets
+            .iter()
+            .map(|t| VisibleEnvironment {
+                target: t.alias.clone(),
+                resources: state
+                    .resources
+                    .iter()
+                    .filter(|v| v.target_id == t.id)
+                    .map(|v| VisibleResource {
+                        alias: v.alias.clone(),
+                        health: Health::Unknown,
+                    })
+                    .collect(),
+            })
+            .collect())
     }
     fn toolchain_doctor(
         &self,
@@ -140,19 +148,17 @@ impl UseCases for FixtureCases {
         resource: &AuthorizedResource<'_>,
     ) -> UseCaseResult<Executed<ConnectionResult>> {
         self.enter()?;
-        assert_eq!(resource.binding().id.0.to_string(), RESOURCE);
-        Ok(executed(ConnectionResult {
-            latency_ms: 6,
-            version_summary: "MySQL 8".into(),
-        }))
+        assert_eq!(resource.binding()?.id.0.to_string(), RESOURCE);
+        Ok(executed(self.open(resource)?))
     }
     fn database_schema(
         &self,
         _: &Authorized<'_>,
-        _: &AuthorizedResource<'_>,
+        resource: &AuthorizedResource<'_>,
         table: Option<&TableName>,
     ) -> UseCaseResult<Vec<Table>> {
         self.enter()?;
+        self.open(resource)?;
         Ok(vec![Table {
             table: table.map_or("orders", TableName::as_str).into(),
             columns: vec![Column {
@@ -169,11 +175,12 @@ impl UseCases for FixtureCases {
     fn database_query(
         &self,
         _: &Authorized<'_>,
-        _: &AuthorizedResource<'_>,
+        resource: &AuthorizedResource<'_>,
         sql: &QueryText,
     ) -> UseCaseResult<Executed<QueryResult>> {
         self.enter()?;
         assert_eq!(sql.as_str(), "SELECT id FROM orders");
+        self.open(resource)?;
         Ok(executed(QueryResult::new(
             vec!["id".into()],
             vec![vec![Cell::Number(1.into())]],

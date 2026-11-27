@@ -410,3 +410,178 @@ fn listing_metadata_does_not_grant_access_to_the_listed_objects() {
         Some(ErrorCode::PolicyDenied)
     );
 }
+
+#[test]
+fn a_staging_read_grant_does_not_make_the_endpoint_visible() {
+    let mut data = state();
+    data.targets[0].kind = EnvironmentKind::Staging;
+    data.grants.retain(|g| {
+        matches!(
+            g.capability,
+            Capability::EnvironmentInspect | Capability::DatabaseRead(_)
+        )
+    });
+    let binding = data.binding.id;
+    let repo = Memory(RefCell::new(data));
+    let session = Session::from_registration(&repo, binding, Actor::Cli).unwrap();
+    let report = session.invoke(&FixtureCases::default(), "environment_list", json!({}));
+    assert_eq!(
+        serde_json::to_value(report).unwrap()["result"]["environments"],
+        json!([])
+    );
+}
+
+#[test]
+fn remote_matrix_checks_both_policy_and_scope_before_any_io() {
+    let cases = FixtureCases::default();
+    for kind in [
+        EnvironmentKind::Dev,
+        EnvironmentKind::Test,
+        EnvironmentKind::Staging,
+        EnvironmentKind::Prod,
+        EnvironmentKind::Custom("legacy".into()),
+    ] {
+        for risk in [
+            RiskLevel::Low,
+            RiskLevel::Medium,
+            RiskLevel::High,
+            RiskLevel::Critical,
+        ] {
+            let mut state = state();
+            state.targets.truncate(1);
+            state.targets[0].kind = kind.clone();
+            state.targets[0].risk = risk;
+            state.targets[0].alias = alias("innocent");
+            let id = state.binding.id;
+            let repo = Memory(RefCell::new(state));
+            let session = Session::from_registration(&repo, id, Actor::LocalStdio).unwrap();
+            for name in ["connection_test", "database_schema", "database_query"] {
+                let mut args = json!({"target":"innocent","resource":"primary-db"});
+                if name == "database_query" {
+                    args["sql"] = json!("SELECT id FROM orders");
+                }
+                let expected = risk != RiskLevel::Critical
+                    && match kind {
+                        EnvironmentKind::Dev | EnvironmentKind::Test => {
+                            name != "database_query" || risk != RiskLevel::High
+                        }
+                        EnvironmentKind::Staging => name != "database_query",
+                        _ => false,
+                    };
+                let before = (cases.secret_checks.get(), cases.connections.get());
+                let r = session.invoke(&cases, name, args);
+                assert_eq!(r.ok, expected, "{name} {kind:?} {risk:?}");
+                if !expected {
+                    assert_eq!(r.error_code, Some(ErrorCode::TargetNotAllowed));
+                }
+                let increment = usize::from(expected);
+                assert_eq!(
+                    (cases.secret_checks.get(), cases.connections.get()),
+                    (before.0 + increment, before.1 + increment)
+                );
+            }
+            for name in ["database_write", "redis_write", "es_write", "ssh_exec"] {
+                assert_eq!(
+                    session.invoke(&cases, name, json!({})).error_code,
+                    Some(ErrorCode::InvalidInput)
+                );
+            }
+            assert!(
+                !session
+                    .invoke(&cases, "connection_test", json!({"resource":"primary-db"}))
+                    .ok
+            );
+            assert!(!session.invoke(&cases,"database_query",json!({"target":"innocent","resource":"primary-db","sql":"SELECT 1","allowProd":true})).ok);
+        }
+    }
+}
+
+#[test]
+fn rejected_resource_requests_do_not_reach_secret_store_or_connector() {
+    let original = state();
+    let binding = original.binding.id;
+    let repo = Memory(RefCell::new(original.clone()));
+    let s = Session::from_registration(&repo, binding, Actor::Desktop).unwrap();
+    let cases = FixtureCases::default();
+    let args = json!({"target":"dev","resource":"primary-db"});
+    for mutate in 0..8 {
+        let mut snapshot = original.clone();
+        let grant = snapshot
+            .grants
+            .iter_mut()
+            .find(|g| matches!(g.capability, Capability::ResourceConnect(_)))
+            .unwrap();
+        match mutate {
+            0 => snapshot.targets[0].project_id = ProjectId::generate(),
+            1 => grant.binding_id = BindingId::generate(),
+            2 => {
+                grant.capability = Capability::ResourceConnect(ResourceScope {
+                    target: snapshot.targets[1].id,
+                    resource: snapshot.resources[1].id,
+                })
+            }
+            3 => {
+                grant.capability = Capability::DatabaseSchema(ResourceScope {
+                    target: snapshot.targets[0].id,
+                    resource: snapshot.resources[0].id,
+                })
+            }
+            4 => grant.expires_at = Some(UtcDateTime::now()),
+            5 => grant.revoked_at = Some(UtcDateTime::now()),
+            6 => snapshot.resources[0].endpoint_confirmed = false,
+            _ => snapshot.resources[0].status = Status::Disabled,
+        }
+        *repo.0.borrow_mut() = snapshot;
+        assert!(
+            !s.invoke(&cases, "connection_test", args.clone()).ok,
+            "case {mutate}"
+        );
+    }
+    assert_eq!((cases.secret_checks.get(), cases.connections.get()), (0, 0));
+    *repo.0.borrow_mut() = original;
+    assert!(s.invoke(&cases, "connection_test", args.clone()).ok);
+    repo.0.borrow_mut().grants.clear();
+    assert!(!s.invoke(&cases, "connection_test", args).ok);
+    assert_eq!((cases.secret_checks.get(), cases.connections.get()), (1, 1));
+}
+
+#[test]
+fn revocation_after_dispatch_before_provider_access_blocks_io() {
+    use envlume_application::ports::{BindingSnapshot, Repository};
+    struct RevokeBeforeUse {
+        state: BindingSnapshot,
+        revoke_at: usize,
+        reads: std::cell::Cell<usize>,
+    }
+    impl Repository for RevokeBeforeUse {
+        fn load_binding(&self, id: BindingId) -> Result<Option<BindingSnapshot>, ErrorCode> {
+            assert_eq!(self.state.binding.id, id);
+            self.reads.set(self.reads.get() + 1);
+            let mut snapshot = self.state.clone();
+            if self.reads.get() >= self.revoke_at {
+                snapshot.grants.clear();
+            }
+            Ok(Some(snapshot))
+        }
+    }
+    // Registration, dispatch and the endpoint identity check precede the two provider boundaries.
+    for (revoke_at, secret_checks) in [(4, 0), (5, 1)] {
+        let repo = RevokeBeforeUse {
+            state: state(),
+            reads: Default::default(),
+            revoke_at,
+        };
+        let session = Session::from_registration(&repo, repo.state.binding.id, Actor::Cli).unwrap();
+        let cases = FixtureCases::default();
+        let report = session.invoke(
+            &cases,
+            "connection_test",
+            json!({"target":"dev","resource":"primary-db"}),
+        );
+        assert_eq!(report.error_code, Some(ErrorCode::PolicyDenied));
+        assert_eq!(
+            (cases.secret_checks.get(), cases.connections.get()),
+            (secret_checks, 0)
+        );
+    }
+}
