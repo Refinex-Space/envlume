@@ -3,6 +3,7 @@ pub mod cli_install;
 mod credentials;
 mod environments;
 mod evidence;
+mod integrations;
 pub use evidence::{EvidenceScope, RecordKey};
 mod migrations;
 mod paths;

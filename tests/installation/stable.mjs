@@ -1,5 +1,6 @@
 // Native developer-layout acceptance. Windows uses a disposable runner's Known Folder.
 import assert from "node:assert/strict";
+import { integrationReview } from "./integration.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
@@ -115,6 +116,9 @@ function oldRelease() {
     join(src, "rust-toolchain.toml"),
   );
   cpSync(join(repo, "crates"), join(src, "crates"), { recursive: true });
+  cpSync(join(repo, "integrations"), join(src, "integrations"), {
+    recursive: true,
+  });
   const desktop = join(src, "apps/desktop/src-tauri");
   mkdirSync(join(desktop, "src"), { recursive: true });
   copyFileSync(
@@ -284,6 +288,7 @@ try {
   );
   assert.equal(manage("install").cli.release.sha256, latest.sha256);
   assert.equal(readFileSync(configFile, "utf8"), configuration);
+  integrationReview({ cli: path, desktop, tty, workspace, binding, tmp, env });
   Object.assign(receipt, {
     target: host,
     previous: oldVersion,

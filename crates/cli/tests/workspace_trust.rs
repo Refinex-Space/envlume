@@ -42,6 +42,7 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
     let word = match (args.first().and_then(|v| v.to_str()), action) {
         (Some("credential"), Some("cleanup")) => "cleanup",
         (Some("credential"), _) | (Some("environment"), _) => "confirm",
+        (Some("integration" | "--integration"), _) => "confirm",
         (Some("task"), Some("enable")) => "enable",
         (Some("task"), Some("run")) => "run",
         (_, Some("delete")) => "delete",
@@ -51,7 +52,15 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
     let secret_input = args.first().is_some_and(|s| s == "credential")
         && matches!(action, Some("set" | "repair" | "replace"));
     let mut transcript = Vec::new();
-    let mut answers = vec![(format!("Type {word} to confirm:"), word)];
+    let prompt = if args
+        .first()
+        .is_some_and(|a| a == "integration" || a == "--integration")
+    {
+        "Type confirm to apply:".into()
+    } else {
+        format!("Type {word} to confirm:")
+    };
+    let mut answers = vec![(prompt, word)];
     if word == "run" && env::var_os("T07_EXPECT_DOWNLOAD").is_some() {
         answers.push(("Type download to confirm:".into(), "download"));
     }

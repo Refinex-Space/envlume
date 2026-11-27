@@ -8,4 +8,5 @@ pub(crate) const STEPS: &[&str] = &[
     include_str!("../migrations/007_credential_cleanup.sql"),
     include_str!("../migrations/008_mysql_route.sql"),
     include_str!("../migrations/009_mysql_query_policy.sql"),
+    include_str!("../migrations/010_integration_transactions.sql"),
 ];

@@ -7,6 +7,9 @@ use tauri::Manager;
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.first().is_some_and(|s| s == "--integration") {
+        return envlume_clients::command(&args[1..], StorePaths::local);
+    }
     if args.first().is_some_and(|a| a == "--cli") {
         return cli::maintenance(&args[1..]);
     }

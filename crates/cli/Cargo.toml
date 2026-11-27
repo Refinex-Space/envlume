@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+envlume-clients.workspace = true
 envlume-connectors.workspace = true
 envlume-connector-mysql.workspace = true
 serde = {version="1",features=["derive"]}

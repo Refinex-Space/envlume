@@ -51,7 +51,11 @@ pub fn local_canonical(path: &Path) -> io::Result<PathBuf> {
 }
 
 fn identity(path: &Path) -> io::Result<String> {
-    let key = match get_file_id(path)? {
+    format_identity(get_file_id(path)?, fs::metadata(path)?.created()?)
+}
+
+fn format_identity(id: FileId, created: std::time::SystemTime) -> io::Result<String> {
+    let key = match id {
         FileId::Inode {
             device_id,
             inode_number,
@@ -65,11 +69,55 @@ fn identity(path: &Path) -> io::Result<String> {
             file_index,
         } => format!("wl-{volume_serial_number:x}-{file_index:x}"),
     };
-    let born = fs::metadata(path)?
-        .created()?
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| invalid())?;
+    let born = created.duration_since(UNIX_EPOCH).map_err(|_| invalid())?;
     Ok(format!("{key}-{}", born.as_nanos()))
+}
+
+/// Compare a pinned directory handle with the identity stored at registration.
+pub fn directory_identity(file: &fs::File) -> io::Result<String> {
+    let meta = file.metadata()?;
+    if !meta.is_dir() {
+        return Err(invalid());
+    }
+    #[cfg(unix)]
+    let id = {
+        use std::os::unix::fs::MetadataExt;
+        FileId::new_inode(meta.dev(), meta.ino())
+    };
+    #[cfg(windows)]
+    let id = {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, FILE_ID_INFO, FileIdInfo, GetFileInformationByHandle,
+            GetFileInformationByHandleEx,
+        };
+        let mut high = FILE_ID_INFO::default();
+        // Both queries write a fixed-size OS structure to caller-owned storage.
+        if unsafe {
+            GetFileInformationByHandleEx(
+                file.as_raw_handle(),
+                FileIdInfo,
+                (&mut high as *mut FILE_ID_INFO).cast(),
+                std::mem::size_of_val(&high) as u32,
+            )
+        } != 0
+        {
+            FileId::new_high_res(
+                high.VolumeSerialNumber,
+                u128::from_le_bytes(high.FileId.Identifier),
+            )
+        } else {
+            let mut low = BY_HANDLE_FILE_INFORMATION::default();
+            if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut low) } == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            FileId::new_low_res(
+                low.dwVolumeSerialNumber,
+                (u64::from(low.nFileIndexHigh) << 32) | u64::from(low.nFileIndexLow),
+            )
+        }
+    };
+    format_identity(id, meta.created()?)
 }
 
 pub fn discover(path: &Path) -> io::Result<Workspace> {

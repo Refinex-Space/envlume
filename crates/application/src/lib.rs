@@ -13,3 +13,5 @@ pub mod projects;
 pub mod remote;
 pub mod tasks;
 pub mod workspaces;
+
+pub mod integrations;

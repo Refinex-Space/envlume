@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "integrations/clients",
     "crates/connectors",
     "crates/connector-mysql",
     "crates/secrets",
@@ -24,6 +25,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+envlume-clients = { path = "integrations/clients" }
 envlume-domain = { path = "crates/domain" }
 envlume-application = { path = "crates/application" }
 envlume-storage = { path = "crates/storage" }
