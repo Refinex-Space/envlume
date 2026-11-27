@@ -41,6 +41,11 @@ jobs:
           cargo --version
           node --version
           pnpm --version
+      - name: Verify native credential lifecycle and build isolation
+        run: |
+          cargo test --locked -p envlume-secrets -- --nocapture
+          cargo tree --locked -p envlume-execution --prefix none > task-dependencies.txt
+          if grep -q '^envlume-secrets ' task-dependencies.txt; then exit 1; fi
       - name: Check Windows package manager with an isolated child environment
         if: runner.os == 'Windows'
         run: cargo test --locked -p envlume-execution

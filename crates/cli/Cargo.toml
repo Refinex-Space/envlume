@@ -6,6 +6,9 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+envlume-secrets.workspace = true
+rpassword = "7.5"
+zeroize = "1"
 envlume-audit.workspace = true
 tempfile = "3"
 envlume-execution.workspace = true

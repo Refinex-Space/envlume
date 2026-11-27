@@ -40,24 +40,37 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
     });
     let action = args.get(1).and_then(|v| v.to_str());
     let word = match (args.first().and_then(|v| v.to_str()), action) {
-        (Some("environment"), _) => "confirm",
+        (Some("credential"), Some("cleanup")) => "cleanup",
+        (Some("credential"), _) | (Some("environment"), _) => "confirm",
         (Some("task"), Some("enable")) => "enable",
         (Some("task"), Some("run")) => "run",
         (_, Some("delete")) => "delete",
         (_, Some("configure")) => "configure",
         _ => "trust",
     };
-    let mut answers = vec![word];
+    let secret_input = args.first().is_some_and(|s| s == "credential")
+        && matches!(action, Some("set" | "repair" | "replace"));
+    let mut transcript = Vec::new();
+    let mut answers = vec![(format!("Type {word} to confirm:"), word)];
     if word == "run" && env::var_os("T07_EXPECT_DOWNLOAD").is_some() {
-        answers.push("download");
+        answers.push(("Type download to confirm:".into(), "download"));
     }
-    for answer in answers {
+    const USER: &str = "CLI_T10_fixture_user";
+    const PASSWORD: &str = "CLI_T10_fixture_password";
+    if secret_input {
+        answers.push(("Database username (hidden):".into(), USER));
+        answers.push(("Database password (hidden):".into(), PASSWORD));
+    }
+    for (prompt, answer) in answers {
         let mut output = Vec::new();
         let mut answered_through = 0;
-        let prompt = format!("Type {answer} to confirm:");
+
         while !output.windows(prompt.len()).any(|w| w == prompt.as_bytes()) {
             match rx.recv_timeout(Duration::from_secs(20)) {
                 Ok(bytes) => {
+                    if secret_input {
+                        transcript.extend_from_slice(&bytes);
+                    }
                     output.extend(bytes);
                     let query = b"\x1b[6n";
                     while let Some(pos) = output[answered_through..]
@@ -71,6 +84,9 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
                 }
                 Err(e) => {
                     let _ = child.kill();
+                    if secret_input {
+                        panic!("credential terminal prompt unavailable");
+                    }
                     panic!(
                         "missing {answer} confirmation ({e}): {}",
                         String::from_utf8_lossy(&output)
@@ -96,6 +112,27 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
         };
     loop {
         if let Some(status) = child.try_wait().unwrap() {
+            if secret_input {
+                drop(input);
+                drop(pair.master);
+                while let Ok(bytes) = rx.recv_timeout(Duration::from_secs(1)) {
+                    transcript.extend(bytes);
+                }
+                for marker in [USER, PASSWORD] {
+                    assert!(
+                        !transcript
+                            .windows(marker.len())
+                            .any(|b| b == marker.as_bytes()),
+                        "secret echoed into terminal"
+                    );
+                }
+                return if status.success() {
+                    ExitCode::SUCCESS
+                } else {
+                    eprintln!("Credential command returned {status:?}");
+                    ExitCode::FAILURE
+                };
+            }
             if !status.success() {
                 let tail: Vec<u8> = rx.try_iter().flatten().take(8192).collect();
                 eprintln!(
@@ -145,7 +182,8 @@ fn main() -> ExitCode {
         return approve(Path::new(&args[1]), &args[2..]);
     }
     if args.first().is_some_and(|s| {
-        s == "environment"
+        s == "credential"
+            || s == "environment"
             || s == "report"
             || s == "project"
             || s == "mcp"
@@ -172,6 +210,7 @@ fn main() -> ExitCode {
         "../../tests/execution/tasks.mjs",
         "../../tests/execution/evidence.mjs",
         "../../tests/policy/environments.mjs",
+        "../../tests/credentials/lifecycle.mjs",
     ] {
         let script = Path::new(env!("CARGO_MANIFEST_DIR")).join(script);
         let status = Command::new("node")

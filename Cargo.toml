@@ -1,5 +1,18 @@
 [workspace]
-members = ["crates/policy", "crates/audit", "crates/domain", "crates/workspace", "crates/toolchain", "crates/execution", "crates/application", "crates/storage", "crates/mcp", "crates/cli", "apps/desktop/src-tauri"]
+members = [
+    "crates/secrets",
+    "crates/policy",
+    "crates/audit",
+    "crates/domain",
+    "crates/workspace",
+    "crates/toolchain",
+    "crates/execution",
+    "crates/application",
+    "crates/storage",
+    "crates/mcp",
+    "crates/cli",
+    "apps/desktop/src-tauri",
+]
 resolver = "3"
 
 [workspace.package]
@@ -17,3 +30,4 @@ envlume-toolchain = { path = "crates/toolchain" }
 envlume-execution = { path = "crates/execution" }
 envlume-audit = { path = "crates/audit" }
 envlume-policy = { path = "crates/policy" }
+envlume-secrets = { path = "crates/secrets" }

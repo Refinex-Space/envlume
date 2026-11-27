@@ -18,6 +18,7 @@ ids!(
     ProfileId,
     TargetId,
     ResourceId,
+    CredentialId,
     TaskId,
     GrantId,
     ExecutionId,

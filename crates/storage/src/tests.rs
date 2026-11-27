@@ -51,7 +51,7 @@ fn fresh_schema_enforces_relationships_business_keys_and_sizes() {
             |r| r.get::<_, i64>(0)
         )
         .unwrap(),
-        10
+        11
     );
     assert_eq!(
         conn.query_row("PRAGMA foreign_keys", [], |r| r.get::<_, i64>(0))

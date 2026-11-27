@@ -1,3 +1,5 @@
+#[path = "credentials.rs"]
+mod credentials;
 #[path = "doctor.rs"]
 mod doctor;
 #[path = "environments.rs"]
@@ -14,13 +16,16 @@ use envlume_mcp::Resolution;
 use envlume_storage::{Store, StorePaths};
 use std::{ffi::OsString, process::ExitCode};
 
-const USAGE: &str = "Usage: envlume environment list --binding <id> [--json] | envlume environment set|rename|resource|grant|revoke ... --binding <id> | envlume report show --evidence|--request <id> --binding <id> [--json] | envlume report clear --binding <id> [--json] | envlume task list --binding <id> [--json] | envlume task enable <name> --binding <id> [--timeout <seconds>] [--json] | envlume task disable|run|cancel <name> --binding <id> [--json] | envlume --version | envlume doctor [--binding <id> [--profile <name>]] [--json] | envlume toolchain configure --binding <id> --profile <name> [--tool <name> <constraint> [--path <absolute>]]... [--mise] [--json] | envlume project list [--json] | envlume project add <path> [--project <id>] [--json] | envlume project inspect --path <path> [--json] | envlume project revoke --binding <id> [--json] | envlume project delete --project <id> [--json] | envlume mcp --binding <uuid>";
+const USAGE: &str = "Usage: envlume credential set|replace|repair|clear|status|remove-resource <target> <resource> --binding <id> [--json] | envlume credential cleanup --binding <id> [--json] | envlume environment list --binding <id> [--json] | envlume environment set|rename|resource|grant|revoke ... --binding <id> | envlume report show --evidence|--request <id> --binding <id> [--json] | envlume report clear --binding <id> [--json] | envlume task list --binding <id> [--json] | envlume task enable <name> --binding <id> [--timeout <seconds>] [--json] | envlume task disable|run|cancel <name> --binding <id> [--json] | envlume --version | envlume doctor [--binding <id> [--profile <name>]] [--json] | envlume toolchain configure --binding <id> --profile <name> [--tool <name> <constraint> [--path <absolute>]]... [--mise] [--json] | envlume project list [--json] | envlume project add <path> [--project <id>] [--json] | envlume project inspect --path <path> [--json] | envlume project revoke --binding <id> [--json] | envlume project delete --project <id> [--json] | envlume mcp --binding <uuid>";
 
 pub fn run(
     args: &[OsString],
     locate: impl FnOnce() -> Result<StorePaths, StorageError>,
     resolve: impl FnOnce(BindingId) -> Resolution,
 ) -> ExitCode {
+    if args.first().is_some_and(|op| op == "credential") {
+        return credentials::run(&args[1..], locate);
+    }
     if args.first().is_some_and(|op| op == "environment") {
         return environments::run(&args[1..], locate);
     }

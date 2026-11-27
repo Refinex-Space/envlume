@@ -13,13 +13,14 @@ use std::{
 use tempfile::NamedTempFile;
 
 const APP_ID: i64 = 0x454e564c;
-const STEPS: [&str; 6] = [
+const STEPS: [&str; 7] = [
     include_str!("../migrations/001_baseline.sql"),
     include_str!("../migrations/002_project_description.sql"),
     include_str!("../migrations/003_workspace_trust.sql"),
     include_str!("../migrations/004_task_approval.sql"),
     include_str!("../migrations/005_execution_evidence.sql"),
     include_str!("../migrations/006_endpoint_approval.sql"),
+    include_str!("../migrations/007_credential_cleanup.sql"),
 ];
 pub(super) const CURRENT: i64 = STEPS.len() as i64;
 

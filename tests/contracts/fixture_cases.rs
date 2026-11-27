@@ -10,6 +10,7 @@ pub const RESOURCE: &str = "40000000-0000-4000-8000-000000000001";
 pub const EVIDENCE: &str = "20000000-0000-4000-8000-000000000001";
 #[derive(Default)]
 pub struct FixtureCases {
+    pub connector: Option<Box<dyn ResourceConnector>>,
     pub calls: Counter<usize>,
     pub secret_checks: Counter<usize>,
     pub connections: Counter<usize>,
@@ -148,6 +149,9 @@ impl UseCases for FixtureCases {
         resource: &AuthorizedResource<'_>,
     ) -> UseCaseResult<Executed<ConnectionResult>> {
         self.enter()?;
+        if let Some(connector) = &self.connector {
+            return Ok(executed(connector.test_connection(resource)?));
+        }
         assert_eq!(resource.binding()?.id.0.to_string(), RESOURCE);
         Ok(executed(self.open(resource)?))
     }
