@@ -135,7 +135,7 @@ envlume environment revoke dev primary-db database.schema --binding <binding-id>
 
 `set dev|test|staging|prod` 分别采用 LOW、MEDIUM、HIGH、CRITICAL 初始风险；也可显式指定别名、kind 和 risk。端点参数顺序为目标别名、资源别名、主机、端口、TLS 模式和可选的数据库名。TLS 模式接受 `VERIFY_IDENTITY` 或 `DISABLED`。确认提示展示具体端点。省略 `--ttl` 表示持续有效，直到撤销或配置变化。远端授权只发给当前绑定，并授予目录查看能力。
 
-`environment rename <旧别名> <新别名> --binding <binding-id>` 保留语义类别和风险。CLI 的 `environment list --project <project-id> --json` 也会核对当前工作区。MCP 的 `environment_list({})` 和桌面只读 IPC 按相同权限过滤。桌面可在登记目录以 `envlume-desktop --binding <binding-id>` 启动。T09 只做本地配置、授权与目录读取；真实连接测试见 T11。[权限矩阵及交接](docs/plan/tasks/T09-target-resource-policy.md)
+`environment rename <旧别名> <新别名> --binding <binding-id>` 保留语义类别和风险。CLI 的 `environment list --project <project-id> --json` 也会核对当前工作区。MCP 的 `environment_list({})` 和桌面只读 IPC 按相同权限过滤。桌面可在登记目录以 `envlume-desktop --binding <binding-id>` 启动。MySQL 远端操作还需确认拨号地址和元数据范围。[权限矩阵及交接](docs/plan/tasks/T09-target-resource-policy.md)
 
 ### 设置和修复 MySQL 凭据
 
@@ -157,6 +157,32 @@ envlume credential clear dev primary-db --binding <binding-id>
 | `CHANGED` / `BUSY` | 资源或原引用发生变化，或另一个进程正在修改凭据。重新核对资源后再提交。 |
 
 `credential rebind <target> <destination> <source> --binding <id>` 明确共享同一已确认服务器的系统条目；轮换其中一个资源会产生独立条目。`credential remove-resource <target> <resource> --binding <id>` 停用资源、撤销其远端授权并解除凭据引用。`clear` 仅解除凭据。最后一个引用消失后才删除系统条目。若返回 `cleanupPending: true`，引用变更已保存，可在同一项目的已信任绑定运行 `credential cleanup --binding <id>`。恢复到新目录的 SQLite 副本需要重新核对凭据。[T10 验收与恢复策略](docs/plan/tasks/T10-native-credentials.md)
+
+### 检测 MySQL 连接与读取结构
+
+在已信任工作区，先用 `environment resource` 配置数据库名、主机、端口和 TLS。再准备本地策略文件，例如 `mysql-policy.json`。示例只允许回环服务的 `orders.id`、`orders.name` 和主键。
+
+```json
+{
+  "ips": ["127.0.0.1"],
+  "tables": {
+    "orders": {"columns": ["id", "name"], "indexes": ["PRIMARY"]}
+  }
+}
+```
+
+```sh
+envlume environment mysql-policy dev primary-db mysql-policy.json --ca fixture-ca.pem --binding <binding-id>
+envlume credential set dev primary-db --binding <binding-id>
+envlume environment grant dev primary-db resource.connect --binding <binding-id>
+envlume environment grant dev primary-db database.schema --binding <binding-id>
+envlume connection test dev primary-db --binding <binding-id> --json
+envlume database schema dev primary-db --table orders --binding <binding-id> --json
+```
+
+省略 `--ca` 使用系统信任根；专用 CA 文件只提交公开证书。请先核对终端显示的 IP、CA 指纹及对象范围，再输入 `confirm`。首次设置路由或更改地址、CA 后需要重新绑定凭据和授权。只修改表列索引清单也需要重新授权。空 `tables` 仅供连接检测，省略 `indexes` 表示不公开索引。请为服务端账号单独授予所需表的只读权限。
+
+已获准的 MCP 绑定会发现 `connection_test` 和/或 `database_schema`；长驻进程中的 `environment_list` 返回最近观测到的健康状态。连接证据可用本地 `report show` 复核。运行产品只需已配置的服务和系统凭据，Docker 用于复跑验收。[T11 验收与诊断](docs/plan/tasks/T11-mysql-connect-schema.md)
 
 ### 构建与验证
 

@@ -1,0 +1,114 @@
+{
+  "cliAudit": {
+    "evidenceId": "324b12ef-d4dc-41aa-8794-bdf1b6d778df",
+    "requestId": "890e2533-38a1-43a0-b680-8ab552abe62d",
+    "result": {
+      "latencyMs": 92,
+      "versionSummary": "MySQL 8.4.11"
+    }
+  },
+  "connectionReused": true,
+  "connectionsAfterClose": {
+    "dev": 0,
+    "test": 0
+  },
+  "deniedBeforeCredentials": [
+    "foreign",
+    "unapproved-address",
+    "dns-failure"
+  ],
+  "diagnostics": {
+    "bad-cert": {
+      "code": "NETWORK_UNREACHABLE",
+      "durationMs": 40,
+      "summary": "TLS verification failed. Check the trusted CA and certificate identity."
+    },
+    "bad-login": {
+      "code": "CREDENTIAL_UNAVAILABLE",
+      "durationMs": 21,
+      "summary": "MySQL rejected the login. Verify the account and its database privileges."
+    },
+    "hung": {
+      "code": "TIMEOUT",
+      "durationMs": 5007,
+      "summary": "MySQL operation exceeded its deadline."
+    },
+    "offline": {
+      "code": "NETWORK_UNREACHABLE",
+      "durationMs": 12,
+      "summary": "TCP connection failed. Check service availability, routing, port and VPN."
+    },
+    "wrong-name": {
+      "code": "NETWORK_UNREACHABLE",
+      "durationMs": 17,
+      "summary": "TLS verification failed. Check the trusted CA and certificate identity."
+    }
+  },
+  "idleConnections": 0,
+  "mysql": "8.4.11",
+  "newGrantNewConnection": true,
+  "parallelConnections": {
+    "dev": 3,
+    "test": 2
+  },
+  "tables": {
+    "dev": {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "type": "bigint"
+        },
+        {
+          "name": "name",
+          "nullable": true,
+          "type": "varchar"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "id"
+          ],
+          "name": "PRIMARY"
+        },
+        {
+          "columns": [
+            "name"
+          ],
+          "name": "name_idx"
+        }
+      ],
+      "table": "dev_marker"
+    },
+    "test": {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "type": "bigint"
+        },
+        {
+          "name": "name",
+          "nullable": true,
+          "type": "varchar"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "id"
+          ],
+          "name": "PRIMARY"
+        },
+        {
+          "columns": [
+            "name"
+          ],
+          "name": "name_idx"
+        }
+      ],
+      "table": "test_marker"
+    }
+  }
+}

@@ -64,7 +64,7 @@ Envlume 是一个**本地优先、项目隔离、默认安全的 AI 开发环境
 | 本地数据库 | **SQLite（`rusqlite`；WAL）** | 项目、绑定、环境、策略与审计元数据 |
 | 凭据 | **macOS Keychain / Windows Credential Manager** | 数据库仅保存引用，不保存明文凭据 |
 | 工具链 | **本机发现 + 用户指定路径 + 可选 mise 适配器** | 尊重企业离线环境，不强制下载和修改全局 PATH |
-| MySQL | **Rust SQL 驱动（优先 `sqlx` 的 MySQL 支持）** | 结构化连接、连接池、异步及 TLS |
+| MySQL | **Rust SQL 驱动（MySQL 采用 `mysql_async`，见 ADR-0014）** | 结构化连接、连接池、异步及 TLS |
 | Redis | **`redis` / redis-rs** | 原生连接，无需安装 `redis-cli` |
 | Elasticsearch | **`reqwest` + 兼容版本适配层** | HTTP API 版本差异显式处理 |
 | SSH（v0.2） | **`russh`** | 原生 SSH，主机密钥校验和命令约束 |
@@ -492,6 +492,8 @@ approval: on-first-use
 - **最强保障来自数据库身份**：AI 使用单独只读账号或只读副本，结合数据库层 `GRANT SELECT` 等最小权限，而非仅用 SQL 正则拦截。
 - 建议创建池时用每个资源独立配置，限制最大连接数和闲置时间；不要跨环境复用池或 credentialRef。
 - 返回列级敏感信息前执行结果策略：只读≠可以泄露敏感个人/业务数据。首版默认仅供用户显式授权的 DEV/TEST 数据源；生产只读需要另行批准并启用列/表脱敏策略。
+
+T11 将本地确认的 IP 与实际拨号绑定，并使用原主机名校验证书。可见元数据取本地表、列、索引清单与数据库身份权限的交集。[ADR-0014](adr/ADR-0014.md)
 
 ### 7.3 Redis（v0.2）
 
@@ -1108,6 +1110,7 @@ v0.1 正式发布至少完成以下测试矩阵，**任何 P0 失败不得发布
 | [ADR-0011](adr/ADR-0011.md) | 具名构建使用固定启动入口，仓库 Maven wrapper 与分发地址分项确认 | Accepted |
 | [ADR-0012](adr/ADR-0012.md) | 本地端点确认、绑定级远端授权与三入口可见目录 | Accepted |
 | [ADR-0013](adr/ADR-0013.md) | 原生凭据分代写入、授权取用与引用清理 | Accepted |
+| [ADR-0014](adr/ADR-0014.md) | MySQL 拨号地址确认、元数据允许清单与池隔离 | Accepted |
 
 使用 [ADR 模板](adr/TEMPLATE.md) 登记新决策。新增或改变 Accepted ADR 时必须说明**背景、备选方案、决策理由、风险、安全影响、迁移方案和验证证据**。不允许只因“另一个框架更流行”而直接重写架构。
 

@@ -56,7 +56,7 @@
 |---|---|---|---|
 | [T09 落实环境、资源归属与逐请求授权](tasks/T09-target-resource-policy.md) | 目标风险、资源归属与动态 grant | R1 | 已完成（专项通过，全量复验见任务卡） |
 | [T10 接入系统凭据存储与损坏修复](tasks/T10-native-credentials.md) | 两个平台的凭据存储与引用生命周期 | T09 | 已完成 |
-| [T11 实现 MySQL 连接检测与元数据读取](tasks/T11-mysql-connect-schema.md) | TLS、只读账号、池隔离和 schema | T10 | 待开始 |
+| [T11 实现 MySQL 连接检测与元数据读取](tasks/T11-mysql-connect-schema.md) | TLS、只读账号、池隔离和 schema | T10 | 已完成 |
 | [T12 限制 MySQL 查询并脱敏结果](tasks/T12-mysql-read-query.md) | AST、行列/字节限额与脱敏 | T11 | 待开始 |
 | [T13 接齐八项 MCP 工具和 CLI 输出](tasks/T13-mcp-cli-contracts.md) | 八项工具、错误和 CLI 契约 | T12 | 待开始 |
 | [R2 验收真实 MySQL 与授权隔离](tasks/R2-mysql-policy-review.md) | 双项目、双目标、双账号实测 | T13 | 待开始 |
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| T11 待开始 | [T10-A01–A03](tasks/T10-native-credentials.md#执行记录) 已在修订 `a35c45c` 验证原生凭据生命周期、并发与共享修复、三类输出脱敏 | 为 DEV/TEST 独立测试资源接入授权后的 MySQL 连接、TLS 与许可元数据读取 | [T11 实现 MySQL 连接检测与元数据读取](tasks/T11-mysql-connect-schema.md) |
+| T12 待开始 | [T11-A01–A03](tasks/T11-mysql-connect-schema.md#执行记录) 已用真实 MySQL 8.4.11 核对 DEV/TEST、TLS 诊断、元数据范围及原池回收 | 复用只读账号、授权表列清单和连接器，实现单条 SELECT 校验、结果脱敏与限额 | [T12 限制 MySQL 查询并脱敏结果](tasks/T12-mysql-read-query.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 
