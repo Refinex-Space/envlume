@@ -1,0 +1,13 @@
+{
+  "revision": "f54a42d",
+  "target": "aarch64-apple-darwin",
+  "previous": "0.0.0-t14.1",
+  "current": "0.1.0-dev.1",
+  "maxSchema": 9,
+  "sha256": "796be283fe73c3b523f91e23d0dfbf9a86e6e69a6b503173450d82054cb158a4",
+  "emptyPath": true,
+  "sameConfig": true,
+  "wrongOrigin": "PROJECT_NOT_TRUSTED",
+  "liveUpdate": "old_session_continued",
+  "restore": "previous_context_verified"
+}

@@ -210,6 +210,20 @@ envlume report show --evidence <evidence-id> --binding <binding-id> --json
 
 在已登记的工作区根目录，`envlume project context --binding <id> --json` 返回与 MCP 的 `project_context` 相同的项目、目标和能力摘要。启动 `envlume mcp --binding <id>` 后，客户端可通过 `tools/list` 查看当前授权的工具。每次调用都有独立的 `requestId`。成功运行任务、检测连接或查询数据时，用返回的 `evidenceId` 在本地复查。CLI 和 MCP 各自执行一次操作时会生成不同的编号。[八项工具、退出码与实测记录](docs/plan/tasks/T13-mcp-cli-contracts.md)
 
+### 安装、定位与恢复独立 CLI
+
+用 `pnpm desktop build --debug --no-bundle` 构建开发宿主。通过 Tauri 启动桌面时会安装同版本、同架构的 CLI。也可以直接运行原生宿主的维护命令，结果为一行 JSON。以下用构建产物名举例，Windows 的文件名带 `.exe`。
+
+```sh
+envlume-desktop --cli install
+envlume-desktop --cli locate
+envlume-desktop --cli restore
+```
+
+`locate` 返回的 `cli.path` 可直接作为项目 MCP 配置的 `command`，配套参数为 `["mcp", "--binding", "<binding-id>"]`。客户端的工作目录设为该绑定的已登记目录。macOS 默认入口位于 `~/Library/Application Support/Envlume/bin/envlume`，Windows 位于 `%LOCALAPPDATA%\Envlume\bin\envlume.exe`。含空格或中文的完整路径作为一个参数传递。用户可自行把所在目录加入 PATH。
+
+升级被占用时返回 `BUSY`，关闭相应 MCP/CLI 进程后重试 `install`。显式恢复会保留原入口并返回已恢复的版本；如返回 `INCOMPATIBLE_SCHEMA`，请使用能读取现有数据的版本。更新前的目录库快照保存在 `backups/` 中。[安装和恢复策略](docs/architecture/adr/ADR-0017.md)
+
 ### 构建与验证
 
 以下命令适用于 macOS 终端和 Windows PowerShell。先执行上面的锁定安装，并准备好本机 Maven 3、完整 JDK 与 npm。将 `JAVA_HOME` 指向测试 JDK；全量测试在临时工作区执行一次真实的 Maven 测试和 Node 构建，并从 Maven Central 获取夹具依赖。

@@ -767,6 +767,8 @@ schema_migrations(version PK, applied_at)
 - 如果选择 Tauri sidecar 机制打包 CLI，注意不同架构需要符合 Tauri `externalBin` 的 target triple 命名；从安装包内提取/定位版本化 CLI 的流程必须跨平台测试。
 - 使用原子替换更新 CLI，避免运行中升级导致临时文件丢失；保留必要的回退版本。
 
+T14 由 Tauri 构建钩子生成同版本目标 CLI，嵌入桌面宿主，再原子安装到平台用户目录的 `Envlume/bin`。集成层通过原生定位接口取得路径与版本。[ADR-0017](adr/ADR-0017.md)
+
 ### 11.2 各客户端的适配方式
 
 | 客户端 | 首版集成位置 | 注意事项 |
@@ -1116,6 +1118,7 @@ v0.1 正式发布至少完成以下测试矩阵，**任何 P0 失败不得发布
 | [ADR-0013](adr/ADR-0013.md) | 原生凭据分代写入、授权取用与引用清理 | Accepted |
 | [ADR-0014](adr/ADR-0014.md) | MySQL 拨号地址确认、元数据允许清单与池隔离 | Accepted |
 | [ADR-0016](adr/ADR-0016.md) | 本地历史报告按受信绑定和有效项目查看权查阅与清理 | Accepted |
+| [ADR-0017](adr/ADR-0017.md) | 桌面嵌入同版本 CLI，稳定入口原子安装与显式恢复 | Accepted |
 
 使用 [ADR 模板](adr/TEMPLATE.md) 登记新决策。新增或改变 Accepted ADR 时必须说明**背景、备选方案、决策理由、风险、安全影响、迁移方案和验证证据**。不允许只因“另一个框架更流行”而直接重写架构。
 
