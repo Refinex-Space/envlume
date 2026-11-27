@@ -41,3 +41,5 @@ Phase 3 · v0.1 MVP　·　[返回交付总表](../PLAN.md)
 复跑 `cargo test --locked -p envlume-clients`。三目标 CI 在 T14 的暂存安装测试中同时运行 T15 原生入口脚本。本机可运行 `pnpm desktop build --debug --no-bundle --target aarch64-apple-darwin -- --locked`，再运行 `node tests/installation/stable.mjs target/aarch64-apple-darwin/debug/envlume-desktop`。设置 `T15_TEST_SNAPSHOT` 为新文件路径可记录本轮摘要。
 
 **移交 T16–T18。** 通过 application 的 `Adapter` 传入客户端发现与核验行为，共用 `envlume_clients::Service::execute` 完成确认、登记、发布和恢复。管理指纹只覆盖严格解析的 command/args，整文件指纹覆盖原始字节；原件缺失单独记录。真实客户端的版本、项目加载、信任和重载结论在各自任务实测。[接口和恢复约定](../../architecture/adr/ADR-0018.md)
+
+Windows 首轮通过事务与 ACL 回归。原生交互脚本在安装确认时返回 CLIENT_UNAVAILABLE；portable-pty 的 Windows 环境构造会用注册表 PATH 覆盖父进程值。验收宿主现为集成确认显式传递同一隔离 PATH，继续检查无客户端返回 4、取消返回 3 及真实网关验证。

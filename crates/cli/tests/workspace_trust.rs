@@ -23,6 +23,15 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
         })
         .unwrap();
     let mut command = CommandBuilder::new(exe);
+    #[cfg(windows)]
+    if args
+        .first()
+        .is_some_and(|a| a == "integration" || a == "--integration")
+    {
+        // portable-pty overlays registry PATH on the parent environment. The preview
+        // and its confirmation must see the same isolated client discovery directory.
+        command.env("PATH", env::var_os("PATH").unwrap_or_default());
+    }
     command.args(args);
     command.cwd(env::current_dir().unwrap());
     let mut child = pair.slave.spawn_command(command).unwrap();
