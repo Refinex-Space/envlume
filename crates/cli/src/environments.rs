@@ -15,13 +15,36 @@ fn alias(s: &str) -> Result<Alias, ErrorCode> {
 }
 fn file(path: &str, max: u64) -> Result<Vec<u8>, ErrorCode> {
     use std::io::Read;
-    let m = std::fs::metadata(path).map_err(|_| ErrorCode::InvalidInput)?;
+    let path = envlume_workspace::local_canonical(std::path::Path::new(path))
+        .map_err(|_| ErrorCode::InvalidInput)?;
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        open.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    let handle = open.open(path).map_err(|_| ErrorCode::InvalidInput)?;
+    let m = handle.metadata().map_err(|_| ErrorCode::InvalidInput)?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if m.file_attributes() & 0x400 != 0 {
+            return Err(ErrorCode::InvalidInput);
+        }
+    }
     if !m.is_file() || m.len() > max {
         return Err(ErrorCode::InvalidInput);
     }
     let mut data = Vec::new();
-    std::fs::File::open(path)
-        .and_then(|f| f.take(max + 1).read_to_end(&mut data))
+    handle
+        .take(max + 1)
+        .read_to_end(&mut data)
         .map_err(|_| ErrorCode::InvalidInput)?;
     if data.len() as u64 > max {
         return Err(ErrorCode::InvalidInput);
@@ -181,6 +204,10 @@ fn execute(
             eprintln!("{}", report.human_text());
         }
         return Ok(report.exit_code());
+    }
+    if operation.first() == Some(&"mysql-policy") {
+        // Parsing this edit reads local files. Authenticate the origin before opening them.
+        Session::from_registration(&registry, binding, Actor::Cli)?;
     }
     environments::manage(
         &registry,

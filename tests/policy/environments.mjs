@@ -73,6 +73,21 @@ try {
 		invoke(["environment", "set", "dev", "DEV", "LOW", ...scope], 3).errorCode,
 		"POLICY_DENIED",
 	);
+	assert.equal(
+		invoke(
+			[
+				"environment",
+				"mysql-policy",
+				"dev",
+				"primary-db",
+				join(root, "absent-policy.json"),
+				"--binding",
+				"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+			],
+			3,
+		).errorCode,
+		"PROJECT_NOT_TRUSTED",
+	);
 	for (const [alias, kind] of [
 		["dev", "DEV"],
 		["qa", "TEST"],
