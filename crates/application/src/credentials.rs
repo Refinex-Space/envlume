@@ -205,16 +205,20 @@ fn collect(
     os: &impl CredentialWriter,
     project: ProjectId,
 ) -> Result<(), Fault> {
+    let mut failure = None;
     for reference in db.garbage(project)? {
         if let Some(key) = ItemKey::parse(&reference) {
             match os.delete(&key) {
                 Ok(()) | Err(Fault::Missing) => (),
-                Err(e) => return Err(e),
+                Err(e) => {
+                    failure.get_or_insert(e);
+                    continue;
+                }
             }
         }
         db.collected(project, &reference)?;
     }
-    Ok(())
+    failure.map_or(Ok(()), Err)
 }
 /// Retry cleanup after a crash or an operating-system denial without changing a resource.
 pub fn cleanup(
@@ -231,6 +235,7 @@ pub fn cleanup(
 #[serde(rename_all = "camelCase")]
 pub struct Saved {
     pub cleanup_pending: bool,
+    pub cleanup_error: Option<Fault>,
 }
 pub fn change<P: CredentialWriter>(
     db: &impl Catalogue,
@@ -265,7 +270,9 @@ pub fn change<P: CredentialWriter>(
     }
     // The reference switch has committed. A cleanup failure must not be reported
     // as a failed rotation; its durable journal entry remains retryable.
+    let cleanup_error = collect(db, os, s.project).err();
     Ok(Saved {
-        cleanup_pending: collect(db, os, s.project).is_err(),
+        cleanup_pending: cleanup_error.is_some(),
+        cleanup_error,
     })
 }

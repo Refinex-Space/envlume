@@ -798,11 +798,13 @@ dependencies = [
  "envlume-storage",
  "envlume-toolchain",
  "envlume-workspace",
+ "libc",
  "portable-pty",
  "rpassword",
  "rusqlite",
  "serde_json",
  "tempfile",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 

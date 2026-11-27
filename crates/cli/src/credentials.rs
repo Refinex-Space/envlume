@@ -4,11 +4,12 @@ use envlume_application::{
     projects::StorageError,
 };
 use envlume_domain::{Alias, BindingId};
-use envlume_secrets::{Login, NativeVault};
+use envlume_secrets::NativeVault;
 use envlume_storage::{LocalRegistration, Store, StorePaths};
 use serde_json::{Value, json};
 use std::{env, ffi::OsString, process::ExitCode};
-use zeroize::Zeroizing;
+#[path = "hidden_input.rs"]
+mod hidden_input;
 
 fn execute(
     args: &[OsString],
@@ -89,15 +90,7 @@ fn execute(
         return Err(Fault::AccessDenied);
     }
     let input = if matches!(action, Change::Set | Change::Replace | Change::Repair) {
-        let user = Zeroizing::new(
-            rpassword::prompt_password("Database username (hidden): ")
-                .map_err(|_| Fault::AccessDenied)?,
-        );
-        let password = Zeroizing::new(
-            rpassword::prompt_password("Database password (hidden): ")
-                .map_err(|_| Fault::AccessDenied)?,
-        );
-        Some(Login::new(&user, &password)?)
+        Some(hidden_input::login()?)
     } else {
         None
     };
@@ -107,7 +100,9 @@ fn execute(
         Change::Clear => "NOT_SET",
         _ => "AVAILABLE",
     };
-    Ok(json!({"schemaVersion":1,"ok":true,"state":state,"cleanupPending":saved.cleanup_pending}))
+    Ok(
+        json!({"schemaVersion":1,"ok":true,"state":state,"cleanupPending":saved.cleanup_pending,"cleanupError":saved.cleanup_error}),
+    )
 }
 pub fn run(
     args: &[OsString],

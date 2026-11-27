@@ -111,14 +111,22 @@ struct Fake {
     values: RefCell<BTreeMap<String, Vec<u8>>>,
     write_fault: Cell<Option<Fault>>,
     delete_fault: Cell<Option<Fault>>,
+    read_fault: Cell<Option<Fault>>,
+    after_write: RefCell<Option<Box<dyn FnOnce()>>>,
 }
 impl CredentialWriter for Fake {
     type Input = Login;
     fn write_new(&self, k: &ItemKey, v: &Login) -> Result<(), Fault> {
         self.values.borrow_mut().insert(k.reference(), v.0.to_vec());
+        if let Some(hook) = self.after_write.borrow_mut().take() {
+            hook();
+        }
         self.write_fault.get().map_or(Ok(()), Err)
     }
     fn available(&self, k: &ItemKey) -> Result<(), Fault> {
+        if let Some(e) = self.read_fault.get() {
+            return Err(e);
+        }
         self.values
             .borrow()
             .get(&k.reference())
@@ -389,4 +397,56 @@ fn native_lifecycle_authorized_connector_repair_and_redaction() {
     println!(
         "T10 native: save, authorized use, rotate, damaged/missing, repair, clear; sanitized reports, SQLite/WAL and backup passed."
     );
+}
+
+#[test]
+fn provider_failure_and_endpoint_changes_during_submission_are_recoverable() {
+    let f = Fixture::new();
+    let os = Fake::default();
+    let s = f.selection("dev", "db");
+    let input = Login::new(USER, FIRST).unwrap();
+    os.write_fault.set(Some(Fault::AccessDenied));
+    assert!(matches!(
+        credentials::change(&f.store, &os, &s, Change::Set, Some(&input)),
+        Err(Fault::AccessDenied)
+    ));
+    assert!(f.selection("dev", "db").resource().credential_ref.is_none());
+    os.write_fault.set(None);
+    credentials::change(&f.store, &os, &s, Change::Set, Some(&input)).unwrap();
+    assert_eq!(os.values.borrow().len(), 1);
+    let s = f.selection("dev", "db");
+    for fault in [Fault::AccessDenied, Fault::Unavailable] {
+        os.read_fault.set(Some(fault));
+        assert_eq!(credentials::status(&f.store, &os, &s), Err(fault));
+    }
+    os.read_fault.set(None);
+    let db = f.db();
+    let id = s.resource().id;
+    *os.after_write.borrow_mut() = Some(Box::new(move || {
+        db.execute(
+            "UPDATE resource_bindings SET host='different.invalid' WHERE id=?1",
+            [id.0],
+        )
+        .unwrap();
+    }));
+    assert!(matches!(
+        credentials::change(
+            &f.store,
+            &os,
+            &s,
+            Change::Replace,
+            Some(&Login::new(USER, SECOND).unwrap())
+        ),
+        Err(Fault::Changed)
+    ));
+    let db = f.db();
+    assert!(db.query_row("SELECT credential_ref IS NULL AND confirmed_at_ms IS NULL FROM resource_bindings WHERE id=?1",[id.0],|r|r.get::<_,bool>(0)).unwrap());
+    credentials::cleanup(
+        &Store::open(f.paths.clone()).unwrap(),
+        &os,
+        f.id,
+        &f.registry().origin,
+    )
+    .unwrap();
+    assert!(os.values.borrow().is_empty());
 }
