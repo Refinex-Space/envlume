@@ -1,0 +1,34 @@
+{
+  "revision": "7f019d3",
+  "platform": "darwin",
+  "arch": "arm64",
+  "clients": [
+    {
+      "client": "codex",
+      "scope": "project",
+      "key": "mcp_servers.envlume",
+      "state": "CONFIGURED",
+      "gatewayVerified": true,
+      "clientVerified": false,
+      "exactRestore": true
+    },
+    {
+      "client": "cursor",
+      "scope": "project",
+      "key": "mcpServers.envlume",
+      "state": "CONFIGURED",
+      "gatewayVerified": true,
+      "clientVerified": false,
+      "exactRestore": true
+    },
+    {
+      "client": "claude-code",
+      "scope": "shared-project",
+      "key": "mcpServers.envlume",
+      "state": "CONFIGURED",
+      "gatewayVerified": true,
+      "clientVerified": false,
+      "exactRestore": true
+    }
+  ]
+}

@@ -224,6 +224,23 @@ envlume-desktop --cli restore
 
 升级被占用时返回 `BUSY`，关闭相应 MCP/CLI 进程后重试 `install`。显式恢复会保留原入口并返回已恢复的版本；如返回 `INCOMPATIBLE_SCHEMA`，请使用能读取现有数据的版本。更新前的目录库快照保存在 `backups/` 中。[安装和恢复策略](docs/architecture/adr/ADR-0017.md)
 
+### 预览、安装与卸载项目配置
+
+在已登记的工作区根目录使用 T14 的稳定 CLI。以下以 Codex 的项目配置为例。相同操作可用 `envlume-desktop --integration` 从桌面原生宿主调用。
+
+```sh
+envlume integration detect codex --binding <id> --json
+envlume integration preview codex --binding <id> --json
+envlume integration install codex --binding <id> --json
+envlume integration verify codex --binding <id> --json
+envlume integration preview codex --uninstall --binding <id> --json
+envlume integration uninstall codex --binding <id> --json
+```
+
+安装和卸载在本地终端展示管理条目并等待输入 `confirm`。Codex 使用 `.codex/config.toml`，Cursor 使用 `.cursor/mcp.json`。Claude Code 的仓库共享模式须显式运行 `integration install claude-code --shared-project --binding <id>`。这些项目文件含本机绝对路径和绑定编号，提交版本库前请核对。Claude Code 的个人 local scope 由 T16 接入。
+
+`detect` 检查 PATH 中项目目录外的客户端入口。公共探针实际调用 Envlume 的 `project_context`；`CONFIGURED` 与 `gatewayVerified: true` 表示项目和网关匹配，`clientVerified` 单独表示客户端加载证明。若预览显示 `RECOVERY_REQUIRED`，先核对并确认恢复，再重新预览目标操作。含第三方字段的原配置保存在 Envlume 的私有 `backups/` 下；这些备份应按原配置的敏感程度保管。卸载只移除本绑定拥有的条目，修改过的同名条目需要本地复核。[配置指纹与恢复](docs/architecture/adr/ADR-0018.md)
+
 ### 构建与验证
 
 以下命令适用于 macOS 终端和 Windows PowerShell。先执行上面的锁定安装，并准备好本机 Maven 3、完整 JDK 与 npm。将 `JAVA_HOME` 指向测试 JDK；全量测试在临时工作区执行一次真实的 Maven 测试和 Node 构建，并从 Maven Central 获取夹具依赖。

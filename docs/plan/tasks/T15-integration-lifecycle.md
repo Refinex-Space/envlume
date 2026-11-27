@@ -30,4 +30,14 @@ Phase 3 · v0.1 MVP　·　[返回交付总表](../PLAN.md)
 
 ## 执行记录
 
-待执行。收尾时登记修订、平台/版本、实际命令或操作、对应验收编号、结果与脱敏证据位置。
+2026-11-27，事务实现修订 `7f019d3`，SQLite schema 10。本机 macOS arm64 使用隔离目录和合成凭据。桌面开发包、安装后的独立 CLI 和真实 STDIO 服务参与验收，客户端发现使用独立 PATH 夹具。[本机脱敏结果](../evidence/T15-integrations.json) · [原生入口脚本](../../../tests/installation/integration.mjs)
+
+| 验收 | 实际检查 |
+|---|---|
+| T15-A01 / SEC-011 | 对 JSON 和 TOML 保留第三方服务、未知字段、JSON 长整数及 TOML 注释。重复安装保持原内容，正常卸载精确还原原始字节。模拟写入部分暂存文件、发布后中断、删除提交前后中断，以及原文件已被置换但新文件尚未发布。重启后按 SQLite 意图恢复。客户端适配器拒绝验证时回滚；独立编辑的第三方值保留。 |
+| T15-A02 | 损坏配置、同名外部条目（含启动描述完全相同）均拒绝认领。取消确认不产生配置变更。确认期间发生外部编辑时返回 CONCURRENT_EDIT；验证期间有人改动管理条目时保留其编辑并返回 RECOVERY_CONFLICT。原生负面用例涵盖符号链接、Windows junction 和文件占用。 |
+| T15-A03 | 实调 CLI install/verify/uninstall 与桌面原生 `--integration`，确认 stdout 是单个 JSON。无客户端返回 4，取消返回 3，未知参数返回 2。普通验证返回 CONFIGURED、gatewayVerified=true、clientVerified=false。CLI 输出、预览及诊断不含第三方测试秘密；私有备份与原件逐字节相同。Unix 检查权限位，Windows 实查备份 ACL。 |
+
+复跑 `cargo test --locked -p envlume-clients`。三目标 CI 在 T14 的暂存安装测试中同时运行 T15 原生入口脚本。本机可运行 `pnpm desktop build --debug --no-bundle --target aarch64-apple-darwin -- --locked`，再运行 `node tests/installation/stable.mjs target/aarch64-apple-darwin/debug/envlume-desktop`。设置 `T15_TEST_SNAPSHOT` 为新文件路径可记录本轮摘要。
+
+**移交 T16–T18。** 通过 application 的 `Adapter` 传入客户端发现与核验行为，共用 `envlume_clients::Service::execute` 完成确认、登记、发布和恢复。管理指纹只覆盖严格解析的 command/args，整文件指纹覆盖原始字节；原件缺失单独记录。真实客户端的版本、项目加载、信任和重载结论在各自任务实测。[接口和恢复约定](../../architecture/adr/ADR-0018.md)
