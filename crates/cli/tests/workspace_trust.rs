@@ -128,6 +128,10 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
         } else {
             Duration::from_secs(30)
         };
+    let integration = args
+        .first()
+        .is_some_and(|a| a == "integration" || a == "--integration");
+    let mut pending = Vec::new();
     loop {
         if let Some(status) = child.try_wait().unwrap() {
             if secret_input {
@@ -161,8 +165,25 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
             }
             return ExitCode::SUCCESS;
         }
+        if integration {
+            // Behave like a terminal until the command exits, including cursor
+            // queries issued after the user answered the confirmation prompt.
+            while let Ok(bytes) = rx.try_recv() {
+                pending.extend(bytes);
+            }
+            let query = b"\x1b[6n";
+            while let Some(pos) = pending.windows(query.len()).position(|w| w == query) {
+                input.write_all(b"\x1b[1;1R").unwrap();
+                input.flush().unwrap();
+                pending.drain(..pos + query.len());
+            }
+            if pending.len() > 8192 {
+                pending.drain(..pending.len() - 8192);
+            }
+        }
         if std::time::Instant::now() > deadline {
             child.kill().unwrap();
+            child.wait().unwrap();
             panic!("CLI did not exit after confirmation");
         }
         thread::sleep(Duration::from_millis(20));

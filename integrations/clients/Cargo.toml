@@ -16,7 +16,7 @@ toml_edit = "0.25"
 sha2 = "0.10"
 cap-std = "4"
 cap-fs-ext = "4"
-rmcp = { version = "3.11.0", default-features = false, features = ["client","transport-child-process"] }
+rmcp = { version = "3.11.0", default-features = false, features = ["client","transport-async-rw"] }
 tokio = { version="1", features=["rt","time","process"] }
 
 [target.'cfg(unix)'.dependencies]

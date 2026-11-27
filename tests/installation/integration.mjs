@@ -1,7 +1,7 @@
 // Drive both native hosts against the disposable project and verified CLI from T14.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export function integrationReview({
@@ -44,6 +44,26 @@ export function integrationReview({
       !p.stdout?.includes(secret) && !p.stderr?.includes(secret),
       "third-party field escaped into output",
     );
+    if (p.status !== code && approve) {
+      const name = args[2];
+      const rel = {
+        codex: ".codex/config.toml",
+        cursor: ".cursor/mcp.json",
+        "claude-code": ".mcp.json",
+      }[name];
+      if (rel) {
+        const file = join(workspace, rel);
+        console.error(
+          "T15 confirmation state",
+          JSON.stringify({
+            client: name,
+            operation: args[1],
+            entryVisible:
+              existsSync(file) && readFileSync(file, "utf8").includes(binding),
+          }),
+        );
+      }
+    }
     assert.equal(
       p.status,
       code,

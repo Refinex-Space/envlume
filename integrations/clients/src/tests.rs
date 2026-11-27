@@ -545,3 +545,36 @@ fn windows_sharing_conflict_and_junction_leave_existing_files_untouched() {
     );
     assert_eq!(fs::read(outside.join("mcp.json")).unwrap(), original);
 }
+
+#[test]
+fn timed_out_gateway_probe_reaps_the_child_before_returning() {
+    let h = Harness::new(ClientKind::Cursor);
+    let node = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|d| d.join(if cfg!(windows) { "node.exe" } else { "node" }))
+        .find(|p| p.is_absolute() && p.is_file())
+        .expect("native Node fixture");
+    let stalled=Launch{command:node.to_str().unwrap().into(),args:vec!["-e".into(),
+        "require('node:fs').writeFileSync('probe.pid',String(process.pid));setInterval(()=>{},1000)".into()]};
+    let expected = h.store.integration_binding(h.binding, &h.root).unwrap();
+    assert_eq!(
+        LocalAdapter.verify(h.client, &h.root, &stalled, &expected),
+        Err(Fault::Timeout)
+    );
+    let pid = fs::read_to_string(h.root.join("probe.pid"))
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    assert!(pid > 0);
+    #[cfg(unix)]
+    {
+        // Signal zero checks existence without signalling the test process.
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+    }
+    #[cfg(windows)]
+    fs::rename(&h.root, h._tmp.path().join("released"))
+        .expect("probe released its working directory");
+}

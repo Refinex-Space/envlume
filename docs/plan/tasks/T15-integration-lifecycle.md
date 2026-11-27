@@ -43,3 +43,5 @@ Phase 3 · v0.1 MVP　·　[返回交付总表](../PLAN.md)
 **移交 T16–T18。** 通过 application 的 `Adapter` 传入客户端发现与核验行为，共用 `envlume_clients::Service::execute` 完成确认、登记、发布和恢复。管理指纹只覆盖严格解析的 command/args，整文件指纹覆盖原始字节；原件缺失单独记录。真实客户端的版本、项目加载、信任和重载结论在各自任务实测。[接口和恢复约定](../../architecture/adr/ADR-0018.md)
 
 Windows 首轮通过事务与 ACL 回归。原生交互脚本在安装确认时返回 CLIENT_UNAVAILABLE；portable-pty 的 Windows 环境构造会用注册表 PATH 覆盖父进程值。验收宿主现为集成确认显式传递同一隔离 PATH，继续检查无客户端返回 4、取消返回 3 及真实网关验证。
+
+Windows 还复现了确认后安装命令未退出，清理临时工作区随之发生共享冲突。验证子进程使用独立 STDIO 管道，在 Windows 以 CREATE_NO_WINDOW 启动；成功、拒绝或握手超时均等待子进程回收。新增超时用例实查工作区句柄或 PID 已释放。验收伪终端在确认后继续响应终端游标查询，清理失败时保留首个错误。

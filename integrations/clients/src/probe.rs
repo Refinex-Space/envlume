@@ -3,7 +3,7 @@ use envlume_application::{
     workspaces::BindingInfo,
 };
 use envlume_domain::ClientKind;
-use rmcp::{ServiceExt, model::CallToolRequestParams, transport::TokioChildProcess};
+use rmcp::{ServiceExt, model::CallToolRequestParams};
 use std::{path::Path, process::Stdio, time::Duration};
 
 pub struct LocalAdapter;
@@ -56,6 +56,13 @@ impl Adapter for LocalAdapter {
             .current_dir(root)
             .kill_on_drop(true)
             .env_clear();
+        // The probe communicates over its pipes. It must not attach to a caller's
+        // console (particularly ConPTY) or open a console for the desktop host.
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
         for key in [
             "HOME",
             "USERPROFILE",
@@ -75,12 +82,14 @@ impl Adapter for LocalAdapter {
             .build()
             .map_err(|_| Fault::Storage)?;
         rt.block_on(async {
-            tokio::time::timeout(Duration::from_secs(15), async {
-                let (transport, _) = TokioChildProcess::builder(cmd)
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .map_err(|_| Fault::CliUnavailable)?;
-                let service = ().serve(transport).await.map_err(|_| Fault::VerificationFailed)?;
+            let mut child = cmd.spawn().map_err(|_| Fault::CliUnavailable)?;
+            let stdout = child.stdout.take().expect("piped stdout");
+            let stdin = child.stdin.take().expect("piped stdin");
+            let probe = tokio::time::timeout(Duration::from_secs(15), async move {
+                let service =
+                    ().serve((stdout, stdin))
+                        .await
+                        .map_err(|_| Fault::VerificationFailed)?;
                 let reply = service
                     .call_tool(CallToolRequestParams::new("project_context"))
                     .await
@@ -106,7 +115,21 @@ impl Adapter for LocalAdapter {
                 }
             })
             .await
-            .map_err(|_| Fault::Timeout)?
+            .map_err(|_| Fault::Timeout);
+            // Keep ownership through shutdown, including a cancelled handshake. Exit
+            // only after the probe has released the executable and workspace handles.
+            let status = match tokio::time::timeout(Duration::from_secs(3), child.wait()).await {
+                Ok(status) => status.map_err(|_| Fault::Storage)?,
+                Err(_) => {
+                    child.kill().await.map_err(|_| Fault::Storage)?;
+                    return Err(Fault::Timeout);
+                }
+            };
+            let verdict = probe??;
+            if !status.success() {
+                return Err(Fault::VerificationFailed);
+            }
+            Ok(verdict)
         })
     }
 }
