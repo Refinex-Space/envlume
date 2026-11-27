@@ -137,6 +137,27 @@ envlume environment revoke dev primary-db database.schema --binding <binding-id>
 
 `environment rename <旧别名> <新别名> --binding <binding-id>` 保留语义类别和风险。CLI 的 `environment list --project <project-id> --json` 也会核对当前工作区。MCP 的 `environment_list({})` 和桌面只读 IPC 按相同权限过滤。桌面可在登记目录以 `envlume-desktop --binding <binding-id>` 启动。T09 只做本地配置、授权与目录读取；真实连接测试见 T11。[权限矩阵及交接](docs/plan/tasks/T09-target-resource-policy.md)
 
+### 设置和修复 MySQL 凭据
+
+在已登记的工作区根目录，对已确认的资源执行以下命令。设置和轮换时先核对项目、绑定和端点，再在本机终端分别输入用户名和密码；两个字段均关闭回显。SQLite 只保存引用。用 `--json` 可读取同一状态用于诊断。
+
+```sh
+envlume credential set dev primary-db --binding <binding-id>
+envlume credential status dev primary-db --binding <binding-id> --json
+envlume credential replace dev primary-db --binding <binding-id>
+envlume credential repair dev primary-db --binding <binding-id>
+envlume credential clear dev primary-db --binding <binding-id>
+```
+
+| 状态 | 处理方式 |
+|---|---|
+| `NOT_SET` / `AVAILABLE` | 新资源使用 `set`，已有可用账号需要轮换时使用 `replace`。 |
+| `MISSING` / `DAMAGED` | 系统条目已丢失、内容无效或引用与目标不匹配。使用 `repair` 重新录入，或从同目标的有效资源重绑。 |
+| `ACCESS_DENIED` / `UNAVAILABLE` | 检查系统访问授权，或解锁凭据库、切换到本地用户会话后重试。 |
+| `CHANGED` / `BUSY` | 资源或原引用发生变化，或另一个进程正在修改凭据。重新核对资源后再提交。 |
+
+`credential rebind <target> <destination> <source> --binding <id>` 明确共享同一已确认服务器的系统条目；轮换其中一个资源会产生独立条目。`credential remove-resource <target> <resource> --binding <id>` 停用资源、撤销其远端授权并解除凭据引用。`clear` 仅解除凭据。最后一个引用消失后才删除系统条目。若返回 `cleanupPending: true`，引用变更已保存，可在同一项目的已信任绑定运行 `credential cleanup --binding <id>`。恢复到新目录的 SQLite 副本需要重新核对凭据。[T10 验收与恢复策略](docs/plan/tasks/T10-native-credentials.md)
+
 ### 构建与验证
 
 以下命令适用于 macOS 终端和 Windows PowerShell。先执行上面的锁定安装，并准备好本机 Maven 3、完整 JDK 与 npm。将 `JAVA_HOME` 指向测试 JDK；全量测试在临时工作区执行一次真实的 Maven 测试和 Node 构建，并从 Maven Central 获取夹具依赖。
