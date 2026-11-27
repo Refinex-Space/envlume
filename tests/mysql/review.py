@@ -252,12 +252,9 @@ def wait_for(check, description):
 def review():
     import socket, sys
 
-    exe = binary("envlume-connector-mysql", "mysql_review", "--example", "mysql_review")
-    helper = (
-        binary("envlume", "workspace_trust", "--test", "workspace_trust")
-        if sys.platform == "darwin"
-        else None
-    )
+    exe = binary("envlume","mysql_review","--example","mysql_review")
+    # Using the same signed executable for provisioning and CLI/MCP preserves the native vault ACL.
+    helper = exe if sys.platform=="darwin" else None
     with (
         tempfile.TemporaryDirectory(prefix="envlume-t11-") as tmp,
         socket.socket() as offline,

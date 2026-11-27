@@ -12,8 +12,3 @@ envlume-secrets.workspace = true
 mysql_async = { version = "=0.37.1", default-features = false, features = ["minimal-rust", "native-tls-tls"] }
 tokio = {version="1",features=["rt-multi-thread","net","time","sync"]}
 serde_json="1"
-
-[dev-dependencies]
-envlume-storage.workspace = true
-envlume-connectors.workspace = true
-tempfile="3"

@@ -100,7 +100,20 @@ impl Drop for Fixture {
         }
     }
 }
-fn main() {
+fn main() -> std::process::ExitCode {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if !args.is_empty() {
+        let paths = || {
+            StorePaths::at(PathBuf::from(
+                std::env::var_os("T05_FIXTURE_STORE").expect("isolated fixture store"),
+            ))
+        };
+        return envlume::run(&args, paths, |id| envlume::resolve(paths(), id));
+    }
+    review();
+    std::process::ExitCode::SUCCESS
+}
+fn review() {
     let input = std::io::stdin();
     let mut lines = input.lock().lines();
     let mut first = lines.next().unwrap().unwrap();

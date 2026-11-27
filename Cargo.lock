@@ -886,13 +886,10 @@ name = "envlume-connector-mysql"
 version = "0.1.0-dev.1"
 dependencies = [
  "envlume-application",
- "envlume-connectors",
  "envlume-domain",
  "envlume-secrets",
- "envlume-storage",
  "mysql_async",
  "serde_json",
- "tempfile",
  "tokio",
 ]
 
