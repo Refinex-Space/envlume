@@ -61,8 +61,6 @@ jobs:
           cargo tree --locked -p envlume-domain --target all --prefix none > domain-tree.txt
           cat domain-tree.txt
           if grep -Ei '^(tauri|rusqlite|libsqlite3-sys|sqlx-sqlite|rmcp)( |-|$)' domain-tree.txt; then exit 1; fi
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --locked
       - run: cargo build --locked -p envlume
       - run: cargo run --locked -p envlume -- --version
       - name: Compare desktop IPC and independent CLI in a fresh user profile
@@ -70,6 +68,16 @@ jobs:
           cli="target/$CARGO_BUILD_TARGET/debug/envlume"
           if [[ "$RUNNER_OS" == "Windows" ]]; then cli="$cli.exe"; fi
           cargo run --locked -p envlume-desktop --example shared_catalogue --features tauri/custom-protocol -- "$cli"
+      - run: pnpm desktop build --debug --no-bundle --target ${{ matrix.target }} -- --locked
+      - name: Verify the packaged CLI from an unchanged MCP configuration
+        env:
+          T14_DISPOSABLE_PROFILE: "1"
+        run: |
+          desktop="target/$CARGO_BUILD_TARGET/debug/envlume-desktop"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then desktop="$desktop.exe"; fi
+          node tests/installation/stable.mjs "$desktop"
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
       - name: Verify real workspace trust and live revocation with the installed CLI
         env:
           T05_NATIVE_CLI: ${{ github.workspace }}/target/${{ matrix.target }}/debug/envlume${{ runner.os == 'Windows' && '.exe' || '' }}
@@ -87,14 +95,6 @@ jobs:
           export R1_JAVA21_HOME="$JAVA_HOME_21_X64"
           export R1_NATIVE_CLI="$(cygpath -w "target/$CARGO_BUILD_TARGET/debug/envlume.exe")"
           node tests/evidence/java8.mjs --review
-      - run: pnpm desktop build --debug --no-bundle --target ${{ matrix.target }} -- --locked
-      - name: Verify the packaged CLI from an unchanged MCP configuration
-        env:
-          T14_DISPOSABLE_PROFILE: "1"
-        run: |
-          desktop="target/$CARGO_BUILD_TARGET/debug/envlume-desktop"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then desktop="$desktop.exe"; fi
-          node tests/installation/stable.mjs "$desktop"
       - run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml apps/desktop/src-tauri/Cargo.toml
 
   mysql:

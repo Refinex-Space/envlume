@@ -18,6 +18,15 @@ pub use probe::LocalAdapter;
 use serde::Serialize;
 use std::path::Path;
 
+/// Fixed phase names only: never log configuration, paths, arguments or client replies.
+fn trace(phase: &'static str) {
+    if std::env::var_os("RUST_LOG").as_deref()
+        == Some(std::ffi::OsStr::new("envlume_clients=debug"))
+    {
+        eprintln!("envlume_clients: {phase}");
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preview {
@@ -212,9 +221,11 @@ impl Service<'_> {
         self.finish_removed(r)
     }
     fn confirm_probe(&self, plan: &Plan, r: &Registration) -> Result<Verification, Fault> {
+        trace("check_binding");
         let live = self.store.integration_binding(self.binding, self.origin)?;
         let t = Target::open(&live, self.client, false)?.ok_or(Fault::EntryChanged)?;
         let launch = plan.view.launch.as_ref().ok_or(Fault::CliUnavailable)?;
+        trace("check_cli");
         let stable = cli_install::locate(self.paths).map_err(|_| Fault::CliUnavailable)?;
         if stable.path != Path::new(&launch.command) || signature(launch) != r.fingerprint {
             return Err(Fault::EntryChanged);
@@ -239,6 +250,7 @@ impl Service<'_> {
         Ok(verdict)
     }
     fn checked(&self, plan: Plan, mut r: Registration, fresh: bool) -> Result<Outcome, Fault> {
+        trace("checking");
         let verdict = match self.confirm_probe(&plan, &r) {
             Ok(v) => v,
             Err(e) => {
@@ -254,6 +266,7 @@ impl Service<'_> {
         };
         r.source = None;
         r.pending = None;
+        trace("verified");
         r.status = "INSTALLED".into();
         r.verification = Some(
             match verdict {
@@ -263,6 +276,7 @@ impl Service<'_> {
             .into(),
         );
         self.save(&r)?;
+        trace("registered");
         Ok(Outcome {
             preview: plan.view,
             state: if verdict == Verification::Client {

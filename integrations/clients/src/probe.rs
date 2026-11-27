@@ -81,8 +81,10 @@ impl Adapter for LocalAdapter {
             .enable_all()
             .build()
             .map_err(|_| Fault::Storage)?;
-        rt.block_on(async {
+        super::trace("runtime_ready");
+        let result = rt.block_on(async {
             let mut child = cmd.spawn().map_err(|_| Fault::CliUnavailable)?;
+            super::trace("child_started");
             let stdout = child.stdout.take().expect("piped stdout");
             let stdin = child.stdin.take().expect("piped stdin");
             let probe = tokio::time::timeout(Duration::from_secs(15), async move {
@@ -90,10 +92,12 @@ impl Adapter for LocalAdapter {
                     ().serve((stdout, stdin))
                         .await
                         .map_err(|_| Fault::VerificationFailed)?;
+                super::trace("initialized");
                 let reply = service
                     .call_tool(CallToolRequestParams::new("project_context"))
                     .await
                     .map_err(|_| Fault::VerificationFailed)?;
+                super::trace("tool_replied");
                 let r = reply
                     .structured_content
                     .as_ref()
@@ -118,6 +122,7 @@ impl Adapter for LocalAdapter {
             .map_err(|_| Fault::Timeout);
             // Keep ownership through shutdown, including a cancelled handshake. Exit
             // only after the probe has released the executable and workspace handles.
+            super::trace("transport_closed");
             let status = match tokio::time::timeout(Duration::from_secs(3), child.wait()).await {
                 Ok(status) => status.map_err(|_| Fault::Storage)?,
                 Err(_) => {
@@ -125,11 +130,15 @@ impl Adapter for LocalAdapter {
                     return Err(Fault::Timeout);
                 }
             };
+            super::trace("child_exited");
             let verdict = probe??;
             if !status.success() {
                 return Err(Fault::VerificationFailed);
             }
             Ok(verdict)
-        })
+        });
+        drop(rt);
+        super::trace("runtime_closed");
+        result
     }
 }

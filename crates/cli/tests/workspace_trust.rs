@@ -132,6 +132,7 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
         .first()
         .is_some_and(|a| a == "integration" || a == "--integration");
     let mut pending = Vec::new();
+    let mut trace_tail = Vec::new();
     loop {
         if let Some(status) = child.try_wait().unwrap() {
             if secret_input {
@@ -169,6 +170,10 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
             // Behave like a terminal until the command exits, including cursor
             // queries issued after the user answered the confirmation prompt.
             while let Ok(bytes) = rx.try_recv() {
+                trace_tail.extend_from_slice(&bytes);
+                if trace_tail.len() > 16384 {
+                    trace_tail.drain(..trace_tail.len() - 16384);
+                }
                 pending.extend(bytes);
             }
             let query = b"\x1b[6n";
@@ -182,6 +187,43 @@ fn approve(exe: &Path, args: &[OsString]) -> ExitCode {
             }
         }
         if std::time::Instant::now() > deadline {
+            if integration {
+                for phase in [
+                    "checking",
+                    "check_binding",
+                    "check_cli",
+                    "probe",
+                    "runtime_ready",
+                    "child_started",
+                    "initialized",
+                    "tool_replied",
+                    "transport_closed",
+                    "child_exited",
+                    "runtime_closed",
+                    "verified",
+                    "registered",
+                ] {
+                    let needle = format!("envlume_clients: {phase}");
+                    if trace_tail
+                        .windows(needle.len())
+                        .any(|w| w == needle.as_bytes())
+                    {
+                        eprintln!("T15 observed phase {phase}");
+                    }
+                }
+                #[cfg(windows)]
+                if let Some(pid) = child.process_id() {
+                    let ps = PathBuf::from(env::var_os("SystemRoot").unwrap())
+                        .join(r"System32\WindowsPowerShell1.0\powershell.exe");
+                    let script = r#"$procs=Get-CimInstance Win32_Process; $ids=@([int]$env:T15_PID); while ($ids.Count) { $children=@($procs | Where-Object {$ids -contains $_.ParentProcessId}); foreach ($c in $children) { Write-Output ('T15 active child: '+$c.Name) }; $ids=@($children | ForEach-Object {$_.ProcessId}) }"#;
+                    let output = Command::new(ps)
+                        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+                        .env("T15_PID", pid.to_string())
+                        .output()
+                        .unwrap();
+                    eprint!("{}", String::from_utf8_lossy(&output.stdout));
+                }
+            }
             child.kill().unwrap();
             child.wait().unwrap();
             panic!("CLI did not exit after confirmation");

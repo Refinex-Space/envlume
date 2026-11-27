@@ -35,7 +35,11 @@ export function integrationReview({
       [...(approve ? ["approve", program] : []), ...args, "--json"],
       {
         cwd: workspace,
-        env: { ...clean, PATH: absent ? "" : bins },
+        env: {
+          ...clean,
+          RUST_LOG: "envlume_clients=debug",
+          PATH: absent ? "" : bins,
+        },
         encoding: "utf8",
         timeout: 90000,
       },
