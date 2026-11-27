@@ -212,6 +212,7 @@ async function mcp(config, cwd, callback, refuse = false) {
   }
 }
 
+let primaryError;
 try {
   const base = join(
     tmp,
@@ -306,6 +307,23 @@ try {
     writeFileSync(snapshot, JSON.stringify(receipt, null, 2) + "\n", {
       flag: "wx",
     });
+} catch (error) {
+  primaryError = error;
+  throw error;
 } finally {
-  rmSync(tmp, { recursive: true, force: true });
+  try {
+    rmSync(tmp, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 200,
+    });
+  } catch (cleanupError) {
+    if (primaryError)
+      throw new AggregateError(
+        [primaryError, cleanupError],
+        "Native acceptance and directory cleanup both failed",
+      );
+    throw cleanupError;
+  }
 }

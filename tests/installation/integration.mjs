@@ -44,7 +44,16 @@ export function integrationReview({
       !p.stdout?.includes(secret) && !p.stderr?.includes(secret),
       "third-party field escaped into output",
     );
-    assert.equal(p.status, code, (p.stderr ?? "").slice(-300));
+    assert.equal(
+      p.status,
+      code,
+      JSON.stringify({
+        operation: args.slice(0, 3),
+        approve,
+        processError: p.error?.code,
+        diagnostic: (p.stderr ?? "").slice(-1300),
+      }),
+    );
     if (!approve) return JSON.parse(p.stdout);
   }
   for (const [client, exe, dir, file] of [
@@ -86,7 +95,11 @@ export function integrationReview({
     );
     assert.equal(call("preview").result.preview.change, "add");
     assert.equal(call("install", { code: 3 }).errorCode, "CANCELLED");
-    assert.equal(readFileSync(config, "utf8"), original);
+    assert.ok(
+      readFileSync(config, "utf8") === original,
+      "fixture original differs",
+    );
+    console.log("T15 native confirmation:", client);
     call("install", { approve: true });
     const verified = invoke(desktop, ["--integration", ...options("verify")]);
     assert.equal(verified.result.state, "CONFIGURED");
@@ -105,12 +118,18 @@ export function integrationReview({
     const current = readFileSync(config, "utf8");
     assert.ok(current.includes(secret) && current.includes(binding));
     call("install", { approve: true });
-    assert.equal(readFileSync(config, "utf8"), current);
+    assert.ok(
+      readFileSync(config, "utf8") === current,
+      "registered fixture changed on repeated install",
+    );
     invoke(desktop, ["--integration", ...options("uninstall")], {
       approve: true,
       absent: true,
     });
-    assert.equal(readFileSync(config, "utf8"), original);
+    assert.ok(
+      readFileSync(config, "utf8") === original,
+      "fixture original differs",
+    );
     receipt.clients.push({
       client,
       scope: verified.result.preview.scope,
