@@ -7,6 +7,7 @@ from pathlib import Path
 import platform
 import re
 import subprocess
+import sys
 import tempfile
 
 from claude_model import model_fixture, TOOL
@@ -228,7 +229,80 @@ def check(cli, tty, claude, workspace, binding, home_env, snapshot=None):
         assert integration("detect")["result"]["preview"]["change"] == "add"
         del project["disabledMcpServers"]
         config.write_text(json.dumps(state), encoding="utf-8")
-        integration("install", True)
+        try:
+            integration("install", True)
+        except AssertionError:
+            # Reproduce with the vendor's own local writer in a distinct, disposable profile.
+            # Only classify the targeted server's response; debug logs stay in the fixture.
+            diagnostic_profile = base / "diagnostic"
+            diagnostic_profile.mkdir(mode=0o700)
+            launch = preview["launch"]
+            diagnostic_env = dict(env, CLAUDE_CONFIG_DIR=str(diagnostic_profile))
+            subprocess.run(
+                [
+                    claude,
+                    "mcp",
+                    "add-json",
+                    "--scope",
+                    "local",
+                    "envlume",
+                    json.dumps(launch),
+                ],
+                cwd=workspace,
+                env=diagnostic_env,
+                check=True,
+                capture_output=True,
+                timeout=25,
+            )
+            debug = base / "health.log"
+            health = subprocess.run(
+                [claude, "--debug-file", debug, "mcp", "get", "envlume"],
+                cwd=workspace,
+                env=diagnostic_env,
+                capture_output=True,
+                timeout=45,
+            )
+            fields = dict(
+                line.strip().split(": ", 1)
+                for line in health.stdout.decode("utf-8", errors="replace").splitlines()
+                if ": " in line
+            )
+            log = (
+                debug.read_text(encoding="utf-8", errors="replace")
+                if debug.exists()
+                else ""
+            )
+            print(
+                "Official isolated get "
+                + json.dumps(
+                    {
+                        "exit": health.returncode,
+                        "status": fields.get("Status", "")[:90],
+                        "scope": fields.get("Scope", "")[:90],
+                        "type": fields.get("Type", ""),
+                        "sameCommand": fields.get("Command") == launch["command"],
+                        "sameArgs": fields.get("Args") == " ".join(launch["args"]),
+                        "diagnostics": [
+                            marker
+                            for marker in [
+                                "ENOENT",
+                                "EACCES",
+                                "EPERM",
+                                "handshake failed",
+                                "starting STDIO",
+                                "Connection closed",
+                                "Failed to spawn",
+                                "Timeout",
+                                "PROJECT_NOT_TRUSTED",
+                            ]
+                            if marker.lower() in log.lower()
+                        ],
+                    }
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
         installed = integration("verify")["result"]
         assert (
             installed["state"] == "CONNECTED"

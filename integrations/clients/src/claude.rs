@@ -120,6 +120,7 @@ fn output(exe: &Path, root: &Path, profile: Option<&Path>, args: &[&str]) -> Res
         let system = win.join("System32");
         cmd.env("WINDIR", &win)
             .env("ComSpec", system.join("cmd.exe"))
+            .env("PATHEXT", ".COM;.EXE;.BAT;.CMD")
             .env("PATH", {
                 let mut path = vec![system];
                 if let Some(dir) = std::env::var_os("ProgramFiles") {
@@ -258,7 +259,7 @@ impl Client {
         }
         if !matches!(
             field("Status:"),
-            Some("✔ Connected" | "✓ Connected" | "Connected")
+            Some("✔ Connected" | "✓ Connected" | "√ Connected" | "Connected")
         ) {
             return Err(Fault::ClientRejected);
         }
