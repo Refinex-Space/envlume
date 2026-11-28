@@ -7,7 +7,6 @@ from pathlib import Path
 import platform
 import re
 import subprocess
-import sys
 import tempfile
 
 from claude_model import model_fixture, TOOL
@@ -272,7 +271,7 @@ def check(cli, tty, claude, workspace, binding, home_env, snapshot=None):
                 if debug.exists()
                 else ""
             )
-            print(
+            raise AssertionError(
                 "Official isolated get "
                 + json.dumps(
                     {
@@ -298,11 +297,8 @@ def check(cli, tty, claude, workspace, binding, home_env, snapshot=None):
                             if marker.lower() in log.lower()
                         ],
                     }
-                ),
-                file=sys.stderr,
-                flush=True,
+                )
             )
-            raise
         installed = integration("verify")["result"]
         assert (
             installed["state"] == "CONNECTED"
