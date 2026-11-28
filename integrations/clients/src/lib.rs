@@ -1,6 +1,8 @@
 //! Native project configuration transactions shared by desktop and CLI.
 mod claude;
+mod codex;
 mod layout;
+mod native;
 use layout::Layout;
 mod command;
 mod config;
@@ -54,6 +56,8 @@ pub struct Outcome {
     pub state: &'static str,
     pub gateway_verified: bool,
     pub client_verified: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_config_verified: Option<bool>,
 }
 impl Outcome {
     fn new(preview: Preview, state: &'static str) -> Self {
@@ -62,6 +66,7 @@ impl Outcome {
             state,
             gateway_verified: false,
             client_verified: false,
+            client_config_verified: None,
         }
     }
 }
@@ -101,10 +106,18 @@ impl Service<'_> {
         let before = target.map(|t| t.read()).transpose()?.flatten();
         let entry = layout.document(before.as_deref(), Edit::Inspect)?.entry;
         let (detected, version) = match &layout {
-            Layout::Project(_) => (
-                self.adapter.detected(self.client, &root.canonical_path),
-                None,
-            ),
+            Layout::Project(_) => {
+                let detected = self.adapter.detected(self.client, &root.canonical_path);
+                let version = if detected
+                    && !matches!(action, Action::Uninstall | Action::PreviewUninstall)
+                    && !row.as_ref().is_some_and(|r| r.pending.is_some())
+                {
+                    self.adapter.version(self.client, &root.canonical_path)?
+                } else {
+                    None
+                };
+                (detected, version)
+            }
             Layout::Local { client, .. } => (
                 client.is_some() || claude::Client::available(&root.canonical_path),
                 client.as_ref().map(|c| c.version.clone()),
@@ -324,7 +337,7 @@ impl Service<'_> {
         r.verification = Some(
             match verdict {
                 Verification::Client => "CLIENT",
-                Verification::Gateway => "GATEWAY",
+                Verification::Gateway | Verification::ProjectConfig => "GATEWAY",
             }
             .into(),
         );
@@ -339,6 +352,7 @@ impl Service<'_> {
             },
             gateway_verified: true,
             client_verified: verdict == Verification::Client,
+            client_config_verified: (verdict == Verification::ProjectConfig).then_some(true),
         })
     }
     pub fn execute(
@@ -373,6 +387,7 @@ impl Service<'_> {
                 },
                 gateway_verified: checked && level.is_some(),
                 client_verified: checked && level == Some("CLIENT"),
+                client_config_verified: None,
             });
         }
         match plan.view.change {

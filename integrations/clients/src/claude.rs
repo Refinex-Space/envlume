@@ -2,13 +2,7 @@
 //! Discovery uses a disposable profile, so the client's own project-key resolution
 //! can be checked before offering to change a user's project-local configuration.
 use envlume_application::integrations::{Fault, Launch};
-use std::{
-    io::Read,
-    path::{Path, PathBuf},
-    process::Stdio,
-    time::Duration,
-};
-use tokio::io::AsyncReadExt;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Client {
@@ -36,39 +30,8 @@ fn executable(root: &Path) -> Option<PathBuf> {
             "claude"
         }));
     }
-    bins.into_iter().find_map(|candidate| {
-        let path = envlume_workspace::local_canonical(&candidate).ok()?;
-        if path.starts_with(root) {
-            return None;
-        }
-        let m = path.metadata().ok()?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if m.permissions().mode() & 0o111 == 0 {
-                return None;
-            }
-        }
-        if !m.is_file() {
-            return None;
-        }
-        // The native distribution is Mach-O (including universal binaries) or PE.
-        let mut magic = [0; 4];
-        std::fs::File::open(&path)
-            .ok()?
-            .read_exact(&mut magic)
-            .ok()?;
-        #[cfg(target_os = "macos")]
-        let native = matches!(
-            u32::from_be_bytes(magic),
-            0xcffaedfe | 0xfeedfacf | 0xcafebabe | 0xbebafeca | 0xcafebabf | 0xbfbafeca
-        );
-        #[cfg(windows)]
-        let native = magic.starts_with(b"MZ");
-        #[cfg(not(any(target_os = "macos", windows)))]
-        let native = magic == *b"\x7fELF";
-        native.then_some(path)
-    })
+    bins.into_iter()
+        .find_map(|p| crate::native::native_file(&p, root))
 }
 
 pub(crate) fn profile_path(root: &Path) -> Result<PathBuf, Fault> {
@@ -87,50 +50,8 @@ pub(crate) fn profile_path(root: &Path) -> Result<PathBuf, Fault> {
 }
 
 fn output(exe: &Path, root: &Path, profile: Option<&Path>, args: &[&str]) -> Result<String, Fault> {
-    let mut cmd = tokio::process::Command::new(exe);
-    cmd.args(args)
-        .current_dir(root)
-        .env_clear()
-        .kill_on_drop(true)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    for key in [
-        "HOME",
-        "USERPROFILE",
-        "LOCALAPPDATA",
-        "APPDATA",
-        "SystemRoot",
-        "TEMP",
-        "TMP",
-        "TMPDIR",
-        "ProgramFiles",
-        "ProgramFiles(x86)",
-        "ProgramData",
-        "SystemDrive",
-    ] {
-        if let Some(v) = std::env::var_os(key) {
-            cmd.env(key, v);
-        }
-    }
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(0x08000000);
-        let win = PathBuf::from(std::env::var_os("SystemRoot").ok_or(Fault::ClientUnavailable)?);
-        let system = win.join("System32");
-        cmd.env("WINDIR", &win)
-            .env("ComSpec", system.join("cmd.exe"))
-            .env("PATHEXT", ".COM;.EXE;.BAT;.CMD")
-            .env("PATH", {
-                let mut path = vec![system];
-                if let Some(dir) = std::env::var_os("ProgramFiles") {
-                    path.push(PathBuf::from(dir).join("Git/bin"));
-                }
-                std::env::join_paths(path).map_err(|_| Fault::UnsafePath)?
-            });
-    }
-    #[cfg(unix)]
-    cmd.env("PATH", "/usr/bin:/bin");
+    let mut cmd = crate::native::command(exe, root)?;
+    cmd.args(args);
     if let Some(dir) = profile {
         cmd.env("CLAUDE_CONFIG_DIR", dir);
     }
@@ -139,34 +60,7 @@ fn output(exe: &Path, root: &Path, profile: Option<&Path>, args: &[&str]) -> Res
         .env("DISABLE_AUTOUPDATER", "1")
         .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
         .env("CLAUDE_CODE_DISABLE_CLAUDE_AI_MCP", "1");
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|_| Fault::Storage)?;
-    rt.block_on(async {
-        let mut child = cmd.spawn().map_err(|_| Fault::ClientUnavailable)?;
-        let pipe = child.stdout.take().expect("piped stdout");
-        let attempt = tokio::time::timeout(Duration::from_secs(15), async {
-            let mut data = Vec::new();
-            pipe.take(32769)
-                .read_to_end(&mut data)
-                .await
-                .map_err(|_| Fault::ClientRejected)?;
-            if data.len() > 32768 {
-                return Err(Fault::ClientRejected);
-            }
-            if !child.wait().await.map_err(|_| Fault::Storage)?.success() {
-                return Err(Fault::ClientRejected);
-            }
-            String::from_utf8(data).map_err(|_| Fault::ClientRejected)
-        })
-        .await
-        .unwrap_or(Err(Fault::Timeout));
-        if child.try_wait().map_err(|_| Fault::Storage)?.is_none() {
-            child.kill().await.map_err(|_| Fault::Storage)?;
-        }
-        attempt
-    })
+    crate::native::output(cmd)
 }
 impl Client {
     pub fn available(root: &Path) -> bool {

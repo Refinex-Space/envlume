@@ -27,6 +27,9 @@ impl Layout {
         root: &BindingInfo,
         row: Option<&Registration>,
     ) -> Result<Self, Fault> {
+        if s.client == ClientKind::Codex {
+            crate::codex::ensure_project_scope(&root.canonical_path)?;
+        }
         let remove = matches!(action, Action::Uninstall | Action::PreviewUninstall);
         let use_record = remove || matches!(action, Action::Verify | Action::Detect);
         let shared =

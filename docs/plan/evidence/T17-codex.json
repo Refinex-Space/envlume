@@ -1,0 +1,15 @@
+{
+  "client": "codex-cli 0.171.0-alpha.13.2",
+  "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "scope": "trusted project",
+  "protocol": "2025-06-18",
+  "tool": "project_context",
+  "requestId": "ebfe64c2-436a-4196-a34f-878ac398b71b",
+  "actor": "LOCAL_STDIO",
+  "configRestored": true,
+  "untrustedRejected": true,
+  "liveRevocation": "BINDING_REVOKED",
+  "modelTurns": 0,
+  "userFallbackRejected": true,
+  "configCheckStartedThirdParty": false
+}

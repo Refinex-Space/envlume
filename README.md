@@ -237,6 +237,8 @@ envlume integration preview codex --uninstall --binding <id> --json
 envlume integration uninstall codex --binding <id> --json
 ```
 
+Codex 接入会核对当前用户已信任的项目层。`verify` 返回 `CONFIGURED`、`clientConfigVerified: true` 和 `gatewayVerified: true` 时，Codex 已加载该项目的条目，稳定 CLI 已成功调用 `project_context`。在 Codex 项目会话中调用同一工具，可用返回的 `requestId` 查询审计记录。遇到 `CODEX_PROJECT_NOT_LOADED`，在 Codex 中检查当前目录和信任选择，重新打开该项目后再运行 `verify`。遇到 `CODEX_CONFIG_CONFLICT`，检查其他配置层对 `mcp_servers.envlume` 的覆盖。[验收步骤](docs/plan/tasks/T17-codex-integration.md)
+
 安装和卸载在本地终端展示管理条目并等待输入 `confirm`。Codex 使用 `.codex/config.toml`，Cursor 使用 `.cursor/mcp.json`。Claude Code 的仓库共享模式须显式运行 `integration install claude-code --shared-project --binding <id>`。这些项目文件含本机绝对路径和绑定编号，提交版本库前请核对。
 
 Claude Code 默认登记在当前用户的项目 local scope。从已信任的绑定根目录运行：

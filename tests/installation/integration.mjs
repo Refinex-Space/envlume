@@ -1,8 +1,14 @@
 // Drive both native hosts against the disposable project and verified CLI from T14.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 
 export function integrationReview({
   cli,
@@ -25,6 +31,13 @@ export function integrationReview({
     clients: [],
   };
   const secret = "T15_PRIVATE_FIXTURE_DO_NOT_PRINT";
+  const codexProfile = join(tmp, "T15 Codex profile");
+  mkdirSync(codexProfile);
+  const trustKey = realpathSync.native(workspace);
+  writeFileSync(
+    join(codexProfile, "config.toml"),
+    "[projects." + JSON.stringify(trustKey) + ']\ntrust_level="trusted"\n',
+  );
   function invoke(
     program,
     args,
@@ -38,7 +51,14 @@ export function integrationReview({
         env: {
           ...clean,
           RUST_LOG: "envlume_clients=debug",
-          PATH: absent ? "" : bins,
+          CODEX_HOME: codexProfile,
+          PATH: absent
+            ? ""
+            : args.includes("codex")
+              ? process.env.T17_CODEX_BIN
+                ? dirname(process.env.T17_CODEX_BIN)
+                : (env.PATH ?? env.Path)
+              : bins,
         },
         encoding: "utf8",
         timeout: 90000,

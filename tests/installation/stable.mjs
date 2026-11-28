@@ -311,6 +311,23 @@ try {
       ]),
     );
   }
+  if (process.env.T17_CODEX_BIN) {
+    console.log(
+      run(windows ? "python" : "python3", [
+        "-B",
+        join(repo, "tests/integrations/codex.py"),
+        "--cli",
+        path,
+        "--tty",
+        tty,
+        "--codex",
+        process.env.T17_CODEX_BIN,
+        ...(process.env.T17_TEST_SNAPSHOT
+          ? ["--snapshot", process.env.T17_TEST_SNAPSHOT]
+          : []),
+      ]),
+    );
+  }
   try {
     integrationReview({
       cli: path,

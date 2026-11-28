@@ -79,6 +79,8 @@ pub enum Fault {
     ClientDisabled,
     ProjectScopeMismatch,
     ScopeConflict,
+    CodexProjectNotLoaded,
+    CodexConfigConflict,
     CliUnavailable,
     InvalidConfig,
     UnsafePath,
@@ -105,6 +107,8 @@ impl Fault {
             | Self::EntryChanged
             | Self::ConcurrentEdit
             | Self::Cancelled
+            | Self::CodexProjectNotLoaded
+            | Self::CodexConfigConflict
             | Self::ScopeConflict
             | Self::ProjectScopeMismatch
             | Self::SharedScopeRequired
@@ -121,6 +125,12 @@ impl Fault {
         match self {
             Self::InvalidInput => "Check the integration operation, client and binding.",
             Self::UntrustedBinding => "Open the registered trusted workspace.",
+            Self::CodexProjectNotLoaded => {
+                "Open this workspace in Codex, review project trust, then reload its configuration and verify again."
+            }
+            Self::CodexConfigConflict => {
+                "Review the effective envlume server in Codex. Its options or source differ from the registered project entry."
+            }
             Self::ScopeConflict => {
                 "Review the registered profile and scope before changing the integration."
             }
@@ -128,7 +138,7 @@ impl Fault {
                 "Claude Code resolves this directory to another project. Review the workspace or explicitly select project sharing."
             }
             Self::ClientUnsupported => {
-                "Check Claude Code version and support for project-local MCP configuration."
+                "Check the native client version and its support for project-scoped MCP configuration."
             }
             Self::ClientUnavailable => "Install the client or make its executable discoverable.",
             Self::CliUnavailable => "Install or repair the stable Envlume CLI.",
@@ -169,6 +179,7 @@ pub struct Launch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verification {
     Gateway,
+    ProjectConfig,
     Client,
 }
 
@@ -176,6 +187,13 @@ pub enum Verification {
 /// The generic gateway probe can attest only STDIO and the registered project.
 pub trait Adapter {
     fn detected(&self, client: ClientKind, root: &std::path::Path) -> bool;
+    fn version(
+        &self,
+        _client: ClientKind,
+        _root: &std::path::Path,
+    ) -> Result<Option<String>, Fault> {
+        Ok(None)
+    }
     fn verify(
         &self,
         client: ClientKind,

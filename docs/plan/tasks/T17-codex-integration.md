@@ -28,4 +28,11 @@ Phase 3 · v0.1 MVP　·　[返回交付总表](../PLAN.md)
 
 ## 执行记录
 
-待执行。收尾时登记修订、平台/版本、实际命令或操作、对应验收编号、结果与脱敏证据位置。
+2026-11-28，本机 macOS 26.5.2 arm64，真实 Codex CLI 0.171.0-alpha.13.2。使用独立用户目录、临时 Git 项目和打包安装的 Envlume CLI。通过 app-server 的 STDIO 接口执行下列检查，模型轮次为零。[验收脚本](../../../tests/integrations/codex.py) · [脱敏收据](../evidence/T17-codex.json)
+
+| 验收 | 操作及结果 |
+|---|---|
+| T17-A01 / E2E-09 | 核对可信项目层的真实目录、启用状态、完整启动参数及来源。临时 Codex 线程发现并调用 `project_context`；客户端与 Envlume 协商 MCP `2025-06-18`，requestId 对应正确 bindingId、LOCAL_STDIO、SUCCESS。显式未信任时，即使用户层提供完全相同的服务，也拒绝项目证明并提示核对信任。 |
+| T17-A02 / SEC-011 | 已有第三方 MCP、合成私有设置、Windows 反斜杠和含空格路径。覆盖取消确认、安装失败回滚、重复安装、修改信任后重新验证、正常卸载，以及用户配置路径与安装目标重合时拒绝预览。卸载精确恢复原字节。日常配置核验期间第三方服务的启动标记始终缺失；撤销绑定后，同一 Codex 连接收到 BINDING_REVOKED。 |
+
+**复跑。** 在 macOS 或一次性 Windows 测试用户内构建开发包。设置 `T17_CODEX_BIN` 为原生 Codex 可执行文件的绝对路径，可将 `T17_TEST_SNAPSHOT` 指向新的收据文件，运行 `node tests/installation/stable.mjs <桌面产物>`。Windows 另需设置 `T14_DISPOSABLE_PROFILE=1`。CI 固定使用官方 npm 分发的 Codex 0.172.0。[构建与 CI](../../../.github/workflows/ci.yml)

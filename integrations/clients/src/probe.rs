@@ -9,6 +9,9 @@ use std::{path::Path, process::Stdio, time::Duration};
 pub struct LocalAdapter;
 impl Adapter for LocalAdapter {
     fn detected(&self, client: ClientKind, root: &Path) -> bool {
+        if client == ClientKind::Codex {
+            return crate::codex::executable(root).is_some();
+        }
         let name = match client {
             ClientKind::ClaudeCode => "claude",
             ClientKind::Cursor => "cursor",
@@ -44,9 +47,15 @@ impl Adapter for LocalAdapter {
                 })
             })
     }
+    fn version(&self, client: ClientKind, root: &Path) -> Result<Option<String>, Fault> {
+        if client == ClientKind::Codex {
+            return crate::codex::version(root).map(Some);
+        }
+        Ok(None)
+    }
     fn verify(
         &self,
-        _: ClientKind,
+        client: ClientKind,
         root: &Path,
         launch: &Launch,
         expected: &BindingInfo,
@@ -183,6 +192,11 @@ impl Adapter for LocalAdapter {
         });
         drop(rt);
         super::trace("runtime_closed");
-        result
+        let verdict = result?;
+        if client == ClientKind::Codex {
+            crate::codex::verify(root, launch)?;
+            return Ok(Verification::ProjectConfig);
+        }
+        Ok(verdict)
     }
 }
