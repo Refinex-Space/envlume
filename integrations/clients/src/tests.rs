@@ -118,6 +118,7 @@ impl Harness {
             binding: self.binding,
             client: self.client,
             adapter: probe,
+            shared_project: self.client == ClientKind::ClaudeCode,
         }
     }
     fn row(&self) -> Option<Registration> {
@@ -577,4 +578,49 @@ fn timed_out_gateway_probe_reaps_the_child_before_returning() {
     #[cfg(windows)]
     fs::rename(&h.root, h._tmp.path().join("released"))
         .expect("probe released its working directory");
+}
+
+#[test]
+fn claude_project_insertions_restore_original_bytes_without_archiving_other_fields() {
+    let key = "/workspace/研发";
+    let layout = Layout::Local {
+        path: ".claude.json".into(),
+        dir_id: String::new(),
+        project_key: key.into(),
+        client: None,
+    };
+    let launch = Launch {
+        command: "/opt/工具/envlume".into(),
+        args: vec!["mcp".into()],
+    };
+    for raw in [
+        "{}\r\n",
+        r#" {"profile":"private","projects": {"other":{"value":98765432109876543210987}}} "#,
+        r#"{"projects":{"/workspace/研发":{"custom":true}}}"#,
+        r#"{"projects":{"/workspace/研发":{"mcpServers":{"foreign":{"v":"private"}}}}}"#,
+    ] {
+        let after = layout
+            .document(Some(raw.as_bytes()), Edit::Add(&launch))
+            .unwrap()
+            .bytes;
+        let undo = layout.original_backup(raw.as_bytes(), &after).unwrap();
+        let metadata: serde_json::Value = serde_json::from_slice(&undo).unwrap();
+        assert_eq!(metadata.as_object().unwrap().len(), 2);
+        assert!(metadata["offset"].is_u64() && metadata["length"].is_u64());
+        assert_eq!(
+            layout.change_backup(&after, &signature(&launch)).unwrap(),
+            serde_json::to_vec(&launch).unwrap()
+        );
+        assert_eq!(layout.restore_backup(&after, undo).unwrap(), raw.as_bytes());
+    }
+    for invalid in [
+        r#"{"projects":[]}"#,
+        r#"{"projects":{},"projects":{}}"#,
+        r#"{"projects":{"/workspace/研发":{"mcpServers":null}}}"#,
+    ] {
+        assert!(matches!(
+            layout.document(Some(invalid.as_bytes()), Edit::Add(&launch)),
+            Err(Fault::InvalidConfig)
+        ));
+    }
 }

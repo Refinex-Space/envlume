@@ -101,9 +101,7 @@ export function integrationReview({
     const options = (op) => [
       op,
       client,
-      ...(op === "install" && client === "claude-code"
-        ? ["--shared-project"]
-        : []),
+      ...(client === "claude-code" ? ["--shared-project"] : []),
       "--binding",
       binding,
     ];

@@ -89,6 +89,35 @@ impl Target {
             name: rel.file_name().unwrap().to_str().unwrap().into(),
         }))
     }
+    pub(crate) fn profile(parent: &Path, expected: Option<&str>) -> Result<(Self, String), Fault> {
+        let dir = Dir::open_ambient_dir(parent, cap_std::ambient_authority())
+            .map_err(|_| Fault::UnsafePath)?;
+        let handle = dir
+            .try_clone()
+            .map_err(|_| Fault::UnsafePath)?
+            .into_std_file();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = handle.metadata().map_err(|_| Fault::UnsafePath)?;
+            if metadata.uid() != unsafe { libc::geteuid() } || metadata.mode() & 0o022 != 0 {
+                return Err(Fault::UnsafePath);
+            }
+        }
+        let id = envlume_workspace::directory_identity(&handle).map_err(|_| Fault::UnsafePath)?;
+        if expected.is_some_and(|v| v != id) {
+            return Err(Fault::UnsafePath);
+        }
+        Ok((
+            Self {
+                dir,
+                #[cfg(windows)]
+                path: parent.into(),
+                name: ".claude.json".into(),
+            },
+            id,
+        ))
+    }
     fn read_named(&self, name: &str) -> Result<Option<Vec<u8>>, Fault> {
         let mut opts = OpenOptions::new();
         opts.read(true).follow(FollowSymlinks::No);

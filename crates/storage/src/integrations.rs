@@ -124,7 +124,7 @@ impl Store {
         origin: &Path,
         client: ClientKind,
     ) -> Result<Option<Registration>, Fault> {
-        let query="SELECT id,config_location,scope,config_fingerprint,status,original_hash,published_hash,pending,removal_hash,verification,source_hash
+        let query="SELECT id,config_location,scope,config_fingerprint,status,original_hash,published_hash,pending,removal_hash,verification,source_hash,client_project_key
                    FROM client_integrations WHERE binding_id=? AND client_kind=? AND status!='REMOVED'";
         self.workspace_write(|tx| {
             Self::verified_workspace(tx, binding, origin)?;
@@ -143,6 +143,7 @@ impl Store {
                     removal: r.get(8)?,
                     verification: r.get(9)?,
                     source: r.get(10)?,
+                    project_key: r.get(11)?,
                 })
             })
             .optional()
@@ -151,9 +152,9 @@ impl Store {
         .map_err(fault)
     }
     pub fn put_integration(&self, origin: &Path, r: &Registration) -> Result<(), Fault> {
-        let upsert = "INSERT INTO client_integrations (id,binding_id,client_kind,config_location,scope,config_fingerprint,status,original_hash,published_hash,pending,removal_hash,verification,source_hash)
-            VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
-            ON CONFLICT(binding_id,client_kind) DO UPDATE SET id=excluded.id,config_location=excluded.config_location,scope=excluded.scope,config_fingerprint=excluded.config_fingerprint,status=excluded.status,original_hash=excluded.original_hash,published_hash=excluded.published_hash,pending=excluded.pending,removal_hash=excluded.removal_hash,verification=excluded.verification,source_hash=excluded.source_hash";
+        let upsert = "INSERT INTO client_integrations (id,binding_id,client_kind,config_location,scope,config_fingerprint,status,original_hash,published_hash,pending,removal_hash,verification,source_hash,client_project_key)
+            VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)
+            ON CONFLICT(binding_id,client_kind) DO UPDATE SET id=excluded.id,config_location=excluded.config_location,scope=excluded.scope,config_fingerprint=excluded.config_fingerprint,status=excluded.status,original_hash=excluded.original_hash,published_hash=excluded.published_hash,pending=excluded.pending,removal_hash=excluded.removal_hash,verification=excluded.verification,source_hash=excluded.source_hash,client_project_key=excluded.client_project_key";
         self.workspace_write(|tx| {
             Self::verified_workspace(tx, r.binding, origin)?;
             tx.execute(
@@ -171,7 +172,8 @@ impl Store {
                     r.pending,
                     r.removal,
                     r.verification,
-                    r.source
+                    r.source,
+                    r.project_key
                 ],
             )
             .map_err(database_error)?;

@@ -1,0 +1,19 @@
+{
+  "gitSubdirectoryScopeMismatch": true,
+  "rollbackVerified": true,
+  "privateBackupsChecked": 4,
+  "client": "2.1.318 (Claude Code)",
+  "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "arch": "arm64",
+  "scope": "local",
+  "clientReload": "new process",
+  "modelTransport": "loopback scripted Messages",
+  "projectContext": {
+    "requestId": "6866fb19-16f3-43e6-ace1-af02f2623743",
+    "bindingAlias": "ws-work-c2a27fb80638457887415ff9560e11a7",
+    "protocol": "2026-07-28",
+    "tool": "mcp__envlume__project_context"
+  },
+  "siblingVisible": false,
+  "thirdPartyPreserved": true
+}

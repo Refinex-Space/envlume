@@ -67,7 +67,7 @@
 |---|---|---|---|
 | [T14 交付可独立定位和升级的 CLI](tasks/T14-stable-cli.md) | 稳定绝对路径与原子替换 | R2 | 已完成 |
 | [T15 实现配置预览、合并与回滚](tasks/T15-integration-lifecycle.md) | 五步安装生命周期与配置保护 | T14 | 已完成 |
-| [T16 交付 Claude Code 项目接入](tasks/T16-claude-code-integration.md) | 真实 Claude Code 作用域与回滚 | T15 | 待开始 |
+| [T16 交付 Claude Code 项目接入](tasks/T16-claude-code-integration.md) | 真实 Claude Code 作用域与回滚 | T15 | 已完成 |
 | [T17 交付 Codex 可信项目接入](tasks/T17-codex-integration.md) | 真实 Codex 项目信任与回滚 | T16 | 待开始 |
 | [T18 交付 Cursor 项目接入](tasks/T18-cursor-integration.md) | 真实 Cursor 项目配置与回滚 | T17 | 待开始 |
 | [T19 完成桌面项目、工具链与任务流程](tasks/T19-desktop-projects-toolchains.md) | 桌面项目、工具链、构建与取消 | T18 | 待开始 |
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| T16 待开始 | [T15-A01–A03](tasks/T15-integration-lifecycle.md#执行记录) 已验证 JSON/TOML 生命周期、并发及失败恢复、权限和退出码 | 在真实 Claude Code 中核对项目 local scope、重载和 project_context | [T16 交付 Claude Code 项目接入](tasks/T16-claude-code-integration.md) |
+| T17 待开始 | [T16-A01/A02](tasks/T16-claude-code-integration.md#执行记录) 已验证 Claude Code 个人项目接入、真实工具调用、项目隔离和回滚 | 在隔离项目验证 Codex 项目信任与 MCP 加载 | [T17 交付 Codex 可信项目接入](tasks/T17-codex-integration.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 

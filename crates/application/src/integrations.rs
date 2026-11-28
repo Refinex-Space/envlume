@@ -20,6 +20,7 @@ pub struct Registration {
     pub client: ClientKind,
     pub location: PathBuf,
     pub scope: String,
+    pub project_key: Option<String>,
     pub fingerprint: String,
     pub status: String,
     pub original: Option<String>,
@@ -74,6 +75,10 @@ pub enum Fault {
     InvalidInput,
     UntrustedBinding,
     ClientUnavailable,
+    ClientUnsupported,
+    ClientDisabled,
+    ProjectScopeMismatch,
+    ScopeConflict,
     CliUnavailable,
     InvalidConfig,
     UnsafePath,
@@ -100,11 +105,14 @@ impl Fault {
             | Self::EntryChanged
             | Self::ConcurrentEdit
             | Self::Cancelled
+            | Self::ScopeConflict
+            | Self::ProjectScopeMismatch
             | Self::SharedScopeRequired
             | Self::NotRegistered
+            | Self::ClientDisabled
             | Self::ClientRejected
             | Self::RecoveryConflict => 3,
-            Self::ClientUnavailable | Self::CliUnavailable => 4,
+            Self::ClientUnavailable | Self::ClientUnsupported | Self::CliUnavailable => 4,
             Self::Timeout | Self::Busy => 6,
             Self::Storage | Self::VerificationFailed => 7,
         }
@@ -113,6 +121,15 @@ impl Fault {
         match self {
             Self::InvalidInput => "Check the integration operation, client and binding.",
             Self::UntrustedBinding => "Open the registered trusted workspace.",
+            Self::ScopeConflict => {
+                "Review the registered profile and scope before changing the integration."
+            }
+            Self::ProjectScopeMismatch => {
+                "Claude Code resolves this directory to another project. Review the workspace or explicitly select project sharing."
+            }
+            Self::ClientUnsupported => {
+                "Check Claude Code version and support for project-local MCP configuration."
+            }
             Self::ClientUnavailable => "Install the client or make its executable discoverable.",
             Self::CliUnavailable => "Install or repair the stable Envlume CLI.",
             Self::InvalidConfig => "Repair the project configuration and preview again.",
@@ -127,6 +144,9 @@ impl Fault {
             Self::NotRegistered => "No managed entry is registered for this binding.",
             Self::VerificationFailed => {
                 "The gateway could not verify the expected project context."
+            }
+            Self::ClientDisabled => {
+                "Claude Code disabled this server for this project. Review it in /mcp."
             }
             Self::ClientRejected => "The client rejected the project configuration.",
             Self::Timeout => "Project context verification timed out.",

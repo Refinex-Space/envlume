@@ -1,10 +1,13 @@
 //! Native project configuration transactions shared by desktop and CLI.
+mod claude;
+mod layout;
+use layout::Layout;
 mod command;
 mod config;
 mod file;
 mod probe;
 pub use command::command;
-use config::{Edit, document, signature};
+use config::{Edit, signature};
 use envlume_application::{
     integrations::{
         Action, Adapter, ConfigChange, Fault, Launch, Registration, Verification, client_name,
@@ -35,6 +38,10 @@ pub struct Preview {
     pub location: String,
     pub binding: BindingId,
     pub detected: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_key: Option<String>,
     pub backup_ref: Option<IntegrationId>,
     pub key: &'static str,
     pub change: ConfigChange,
@@ -67,9 +74,11 @@ pub struct Service<'a> {
     pub binding: BindingId,
     pub client: ClientKind,
     pub adapter: &'a dyn Adapter,
+    pub shared_project: bool,
 }
 struct Plan {
     view: Preview,
+    layout: Layout,
     root: BindingInfo,
     row: Option<Registration>,
     before: Option<Vec<u8>>,
@@ -77,20 +86,30 @@ struct Plan {
 impl Service<'_> {
     fn plan(&self, action: Action) -> Result<Plan, Fault> {
         let root = self.store.integration_binding(self.binding, self.origin)?;
-        let location = root.canonical_path.join(relative(self.client));
         let row = self
             .store
             .integration_record(self.binding, self.origin, self.client)?;
+        let layout = Layout::resolve(self, action, &root, row.as_ref())?;
+        let location = layout.location(&root);
         if row
             .as_ref()
             .is_some_and(|r| r.location != location || r.original.is_none())
         {
             return Err(Fault::NameConflict);
         }
-        let target = Target::open(&root, self.client, false)?;
+        let target = layout.open(&root, false)?;
         let before = target.map(|t| t.read()).transpose()?.flatten();
-        let entry = document(self.client, before.as_deref(), Edit::Inspect)?.entry;
-        let detected = self.adapter.detected(self.client, &root.canonical_path);
+        let entry = layout.document(before.as_deref(), Edit::Inspect)?.entry;
+        let (detected, version) = match &layout {
+            Layout::Project(_) => (
+                self.adapter.detected(self.client, &root.canonical_path),
+                None,
+            ),
+            Layout::Local { client, .. } => (
+                client.is_some() || claude::Client::available(&root.canonical_path),
+                client.as_ref().map(|c| c.version.clone()),
+            ),
+        };
         let change = ConfigChange::for_entry(action, row.as_ref(), entry.as_deref());
         let launch = if matches!(
             action,
@@ -110,19 +129,23 @@ impl Service<'_> {
         Ok(Plan {
             view: Preview {
                 client: client_name(self.client),
-                scope: if self.client == ClientKind::ClaudeCode {
-                    "shared-project"
+                scope: layout.scope(),
+                location: if layout.project_key().is_some() {
+                    location.to_string_lossy().into_owned()
                 } else {
-                    "project"
+                    relative(self.client).to_string_lossy().into_owned()
                 },
-                location: relative(self.client).to_string_lossy().into_owned(),
+                project_key: layout.project_key().map(str::to_owned),
+                client_version: version,
                 binding: self.binding,
                 detected,
                 backup_ref: row
                     .as_ref()
                     .filter(|r| r.original.as_deref() != Some("absent"))
                     .map(|r| r.id),
-                key: if self.client == ClientKind::Codex {
+                key: if layout.project_key().is_some() {
+                    "projects[projectKey].mcpServers.envlume"
+                } else if self.client == ClientKind::Codex {
                     "mcp_servers.envlume"
                 } else {
                     "mcpServers.envlume"
@@ -133,11 +156,17 @@ impl Service<'_> {
             root,
             row,
             before,
+            layout,
         })
     }
 
-    fn removal(&self, r: &Registration, before: Option<&[u8]>) -> Result<Option<Vec<u8>>, Fault> {
-        let doc = document(self.client, before, Edit::Inspect)?;
+    fn removal(
+        &self,
+        layout: &Layout,
+        r: &Registration,
+        before: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, Fault> {
+        let doc = layout.document(before, Edit::Inspect)?;
         if doc.entry.as_deref() != Some(&r.fingerprint) {
             return Err(Fault::EntryChanged);
         }
@@ -145,13 +174,14 @@ impl Service<'_> {
             if r.original.as_deref() == Some("absent") {
                 return Ok(None);
             }
-            let bytes = self.paths.load_config_backup(r.id, file::MAX)?;
+            let backup = self.paths.load_config_backup(r.id, file::MAX)?;
+            let bytes = layout.restore_backup(before.ok_or(Fault::RecoveryConflict)?, backup)?;
             if Some(&fingerprint(Some(&bytes))) != r.original.as_ref() {
                 return Err(Fault::RecoveryConflict);
             }
             return Ok(Some(bytes));
         }
-        Ok(Some(document(self.client, before, Edit::Remove)?.bytes))
+        Ok(Some(layout.document(before, Edit::Remove)?.bytes))
     }
     fn publish(
         &self,
@@ -174,9 +204,14 @@ impl Service<'_> {
         r.status = "REMOVED".into();
         self.save(r)
     }
-    fn recover(&self, root: &BindingInfo, r: &mut Registration) -> Result<(), Fault> {
+    fn recover(
+        &self,
+        layout: &Layout,
+        root: &BindingInfo,
+        r: &mut Registration,
+    ) -> Result<(), Fault> {
         self.store.integration_binding(self.binding, self.origin)?;
-        let t = Target::open(root, self.client, false)?;
+        let t = layout.open(root, false)?;
         if let Some(t) = &t {
             t.clear_interrupted(r)?;
         }
@@ -184,13 +219,15 @@ impl Service<'_> {
         let sum = fingerprint(now.as_deref());
         if r.pending.as_deref() == Some("REMOVE") {
             if r.removal.as_deref() == Some(&sum)
-                || document(self.client, now.as_deref(), Edit::Inspect)?
+                || layout
+                    .document(now.as_deref(), Edit::Inspect)?
                     .entry
                     .is_none()
             {
                 return self.finish_removed(r);
             }
-            if document(self.client, now.as_deref(), Edit::Inspect)?
+            if layout
+                .document(now.as_deref(), Edit::Inspect)?
                 .entry
                 .as_deref()
                 != Some(&r.fingerprint)
@@ -203,13 +240,18 @@ impl Service<'_> {
             return self.save(r);
         }
         if r.original.as_deref() != Some(&sum) {
-            let entry = document(self.client, now.as_deref(), Edit::Inspect)?.entry;
+            let entry = layout.document(now.as_deref(), Edit::Inspect)?.entry;
             if entry.is_some() {
                 let restore = self
-                    .removal(r, now.as_deref())
+                    .removal(layout, r, now.as_deref())
                     .map_err(|_| Fault::RecoveryConflict)?;
-                self.paths
-                    .save_change_backup(r.id, now.as_deref().ok_or(Fault::RecoveryConflict)?)?;
+                self.paths.save_change_backup(
+                    r.id,
+                    &layout.change_backup(
+                        now.as_deref().ok_or(Fault::RecoveryConflict)?,
+                        &r.fingerprint,
+                    )?,
+                )?;
                 self.publish(
                     t.as_ref().ok_or(Fault::RecoveryConflict)?,
                     r.id,
@@ -223,7 +265,7 @@ impl Service<'_> {
     fn confirm_probe(&self, plan: &Plan, r: &Registration) -> Result<Verification, Fault> {
         trace("check_binding");
         let live = self.store.integration_binding(self.binding, self.origin)?;
-        let t = Target::open(&live, self.client, false)?.ok_or(Fault::EntryChanged)?;
+        let t = plan.layout.open(&live, false)?.ok_or(Fault::EntryChanged)?;
         let launch = plan.view.launch.as_ref().ok_or(Fault::CliUnavailable)?;
         trace("check_cli");
         let stable = cli_install::locate(self.paths).map_err(|_| Fault::CliUnavailable)?;
@@ -231,7 +273,9 @@ impl Service<'_> {
             return Err(Fault::EntryChanged);
         }
         let verify_entry = || {
-            if document(self.client, t.read()?.as_deref(), Edit::Inspect)?
+            if plan
+                .layout
+                .document(t.read()?.as_deref(), Edit::Inspect)?
                 .entry
                 .as_deref()
                 != Some(&r.fingerprint)
@@ -247,6 +291,15 @@ impl Service<'_> {
             .verify(self.client, &live.canonical_path, launch, &live)?;
         self.store.integration_binding(self.binding, self.origin)?;
         verify_entry()?;
+        if let Layout::Local { client, .. } = &plan.layout {
+            client
+                .as_ref()
+                .ok_or(Fault::ClientUnavailable)?
+                .verify_local(&live.canonical_path, launch)?;
+            self.store.integration_binding(self.binding, self.origin)?;
+            verify_entry()?;
+            return Ok(Verification::Client);
+        }
         Ok(verdict)
     }
     fn checked(&self, plan: Plan, mut r: Registration, fresh: bool) -> Result<Outcome, Fault> {
@@ -255,7 +308,7 @@ impl Service<'_> {
             Ok(v) => v,
             Err(e) => {
                 if fresh {
-                    self.recover(&plan.root, &mut r)?;
+                    self.recover(&plan.layout, &plan.root, &mut r)?;
                 } else {
                     r.status = "STALE".into();
                     r.verification = None;
@@ -353,6 +406,7 @@ impl Service<'_> {
         let _guard = self.paths.lock_integrations()?;
         let current = self.plan(action)?;
         if current.row != plan.row
+            || current.layout != plan.layout
             || current.before != plan.before
             || current.view != plan.view
             || current.root.root_identity != plan.root.root_identity
@@ -361,21 +415,28 @@ impl Service<'_> {
         }
         if let Some(mut r) = current.row.clone() {
             if r.pending.is_some() {
-                self.recover(&current.root, &mut r)?;
+                self.recover(&current.layout, &current.root, &mut r)?;
                 return Ok(Outcome::new(current.view, "RECOVERED"));
             }
             if action == Action::Install {
                 return self.checked(current, r, false);
             }
-            let bytes = self.removal(&r, current.before.as_deref())?;
-            self.paths
-                .save_change_backup(r.id, current.before.as_deref().ok_or(Fault::EntryChanged)?)?;
+            let bytes = self.removal(&current.layout, &r, current.before.as_deref())?;
+            self.paths.save_change_backup(
+                r.id,
+                &current.layout.change_backup(
+                    current.before.as_deref().ok_or(Fault::EntryChanged)?,
+                    &r.fingerprint,
+                )?,
+            )?;
             r.pending = Some("REMOVE".into());
             r.source = Some(fingerprint(current.before.as_deref()));
             r.removal = Some(fingerprint(bytes.as_deref()));
             self.save(&r)?;
-            let t =
-                Target::open(&current.root, self.client, false)?.ok_or(Fault::ConcurrentEdit)?;
+            let t = current
+                .layout
+                .open(&current.root, false)?
+                .ok_or(Fault::ConcurrentEdit)?;
             self.publish(
                 &t,
                 r.id,
@@ -386,19 +447,24 @@ impl Service<'_> {
             return Ok(Outcome::new(current.view, "REMOVED"));
         }
         let launch = current.view.launch.as_ref().ok_or(Fault::CliUnavailable)?;
-        let after = document(self.client, current.before.as_deref(), Edit::Add(launch))?.bytes;
+        let after = current
+            .layout
+            .document(current.before.as_deref(), Edit::Add(launch))?
+            .bytes;
         if after.len() > file::MAX {
             return Err(Fault::InvalidConfig);
         }
         let id = IntegrationId::generate();
         if let Some(bytes) = &current.before {
-            self.paths.save_config_backup(id, bytes)?;
+            self.paths
+                .save_config_backup(id, &current.layout.original_backup(bytes, &after)?)?;
         }
         let mut r = Registration {
             id,
             binding: self.binding,
             client: self.client,
-            location: current.root.canonical_path.join(relative(self.client)),
+            location: current.layout.location(&current.root),
+            project_key: current.view.project_key.clone(),
             scope: current.view.scope.into(),
             fingerprint: signature(launch),
             status: "STALE".into(),
@@ -410,7 +476,10 @@ impl Service<'_> {
             verification: None,
         };
         self.save(&r)?;
-        let t = Target::open(&current.root, self.client, true)?.ok_or(Fault::UnsafePath)?;
+        let t = current
+            .layout
+            .open(&current.root, true)?
+            .ok_or(Fault::UnsafePath)?;
         match self.publish(
             &t,
             r.id,

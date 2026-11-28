@@ -75,7 +75,10 @@ jobs:
         run: |
           desktop="target/$CARGO_BUILD_TARGET/debug/envlume-desktop"
           if [[ "$RUNNER_OS" == "Windows" ]]; then desktop="$desktop.exe"; fi
-          node tests/installation/stable.mjs "$desktop"
+          npm install --prefix "$RUNNER_TEMP/t16-client" --no-audit --no-fund @anthropic-ai/claude-code@2.1.318
+          native="$RUNNER_TEMP/t16-client/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then native="$(cygpath -w "$native")"; fi
+          T16_CLAUDE_BIN="$native" node tests/installation/stable.mjs "$desktop"
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - name: Verify real workspace trust and live revocation with the installed CLI

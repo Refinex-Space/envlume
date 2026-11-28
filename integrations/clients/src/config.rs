@@ -185,3 +185,81 @@ pub(crate) fn document(
         json(source, edit)
     }
 }
+
+// Walk only the selected JSON object path. Preserve sibling values as untouched raw bytes.
+pub(crate) fn local_map<'a>(source: &'a str, project: &str) -> Result<Option<&'a str>, Fault> {
+    let mut node = source;
+    for key in ["projects", project, "mcpServers"] {
+        match members(node)?.0.into_iter().find(|(k, _)| k == key) {
+            Some((_, v)) => node = v.get(),
+            None => return Ok(None),
+        }
+    }
+    members(node)?;
+    Ok(Some(node))
+}
+
+pub(crate) fn local(
+    source: Option<&[u8]>,
+    project: &str,
+    edit: Edit<'_>,
+) -> Result<Document, Fault> {
+    let raw = std::str::from_utf8(source.unwrap_or(b"{}\n")).map_err(|_| Fault::InvalidConfig)?;
+    let keys = ["projects", project, "mcpServers"];
+    let mut node = raw.trim_end();
+    for (i, key) in keys.iter().enumerate() {
+        let fields = members(node)?;
+        if let Some((_, v)) = fields.0.iter().find(|(k, _)| k == key) {
+            node = v.get();
+            continue;
+        }
+        let mut out = raw.to_owned();
+        if let Edit::Add(launch) = edit {
+            let mut value = serde_json::json!({"envlume":launch});
+            for k in keys[i + 1..].iter().rev() {
+                value = serde_json::json!({(*k):value});
+            }
+            let comma = if fields.0.is_empty() { "" } else { "," };
+            let at = node.as_ptr() as usize - raw.as_ptr() as usize + node.len() - 1;
+            out.insert_str(at, &format!("{comma}{}:{value}", serde_json::json!(key)));
+        }
+        return Ok(Document {
+            entry: None,
+            bytes: out.into_bytes(),
+        });
+    }
+    let at = node.as_ptr() as usize - raw.as_ptr() as usize;
+    // Reuse the project JSON editor on exactly this server map.
+    let prefix = r#"{"mcpServers":"#;
+    let wrapped = format!("{prefix}{node}}}");
+    let result = json(&wrapped, edit)?;
+    let mut out = raw.as_bytes().to_vec();
+    out.splice(
+        at..at + node.len(),
+        result.bytes[prefix.len()..result.bytes.len() - 1]
+            .iter()
+            .copied(),
+    );
+    Ok(Document {
+        entry: result.entry,
+        bytes: out,
+    })
+}
+
+pub(super) fn owned_local_entry(
+    source: &str,
+    project: &str,
+    expected: &str,
+) -> Result<Vec<u8>, Fault> {
+    let map = local_map(source, project)?.ok_or(Fault::EntryChanged)?;
+    let (_, value) = members(map)?
+        .0
+        .into_iter()
+        .find(|(k, _)| k == "envlume")
+        .ok_or(Fault::EntryChanged)?;
+    let launch: Launch = serde_json::from_str(value.get()).map_err(|_| Fault::EntryChanged)?;
+    if signature(&launch) != expected {
+        return Err(Fault::EntryChanged);
+    }
+    serde_json::to_vec(&launch).map_err(|_| Fault::Storage)
+}

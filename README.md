@@ -237,9 +237,20 @@ envlume integration preview codex --uninstall --binding <id> --json
 envlume integration uninstall codex --binding <id> --json
 ```
 
-安装和卸载在本地终端展示管理条目并等待输入 `confirm`。Codex 使用 `.codex/config.toml`，Cursor 使用 `.cursor/mcp.json`。Claude Code 的仓库共享模式须显式运行 `integration install claude-code --shared-project --binding <id>`。这些项目文件含本机绝对路径和绑定编号，提交版本库前请核对。Claude Code 的个人 local scope 由 T16 接入。
+安装和卸载在本地终端展示管理条目并等待输入 `confirm`。Codex 使用 `.codex/config.toml`，Cursor 使用 `.cursor/mcp.json`。Claude Code 的仓库共享模式须显式运行 `integration install claude-code --shared-project --binding <id>`。这些项目文件含本机绝对路径和绑定编号，提交版本库前请核对。
 
-`detect` 检查 PATH 中项目目录外的客户端入口。公共探针实际调用 Envlume 的 `project_context`；`CONFIGURED` 与 `gatewayVerified: true` 表示项目和网关匹配，`clientVerified` 单独表示客户端加载证明。若预览显示 `RECOVERY_REQUIRED`，先核对并确认恢复，再重新预览目标操作。含第三方字段的原配置保存在 Envlume 的私有 `backups/` 下；这些备份应按原配置的敏感程度保管。卸载只移除本绑定拥有的条目，修改过的同名条目需要本地复核。[配置指纹与恢复](docs/architecture/adr/ADR-0018.md)
+Claude Code 默认登记在当前用户的项目 local scope。从已信任的绑定根目录运行：
+
+```sh
+envlume integration preview claude-code --binding <id> --json
+envlume integration install claude-code --binding <id>
+envlume integration verify claude-code --binding <id> --json
+envlume integration uninstall claude-code --binding <id>
+```
+
+使用现有的 `CLAUDE_CONFIG_DIR` 时，在同一配置目录下完成这些操作。预览会显示实际项目键。重新启动 Claude Code，用 `/mcp` 查看连接和批准状态。出现 `PROJECT_SCOPE_MISMATCH` 时检查客户端识别的仓库根目录；出现 `CLIENT_DISABLED` 时在 Claude Code 中核对本项目的禁用选择。[本地接入与恢复](docs/architecture/adr/ADR-0019.md)
+
+`detect` 检查 PATH 中项目目录外的客户端入口。公共探针实际调用 Envlume 的 `project_context`；`CONFIGURED` 与 `gatewayVerified: true` 表示项目和网关匹配，`clientVerified` 单独表示客户端加载证明。若预览显示 `RECOVERY_REQUIRED`，先核对并确认恢复，再重新预览目标操作。仓库共享配置的原件保存在 Envlume 的私有 `backups/` 下；这些备份应按原配置的敏感程度保管。Claude Code 个人项目配置只备份撤销插入所需的位置、长度及受管理的启动条目。卸载只移除本绑定拥有的条目，修改过的同名条目需要本地复核。[配置指纹与恢复](docs/architecture/adr/ADR-0018.md)
 
 ### 构建与验证
 

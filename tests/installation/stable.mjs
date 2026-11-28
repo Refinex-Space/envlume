@@ -290,6 +290,27 @@ try {
   );
   assert.equal(manage("install").cli.release.sha256, latest.sha256);
   assert.equal(readFileSync(configFile, "utf8"), configuration);
+  if (process.env.T16_CLAUDE_BIN) {
+    console.log(
+      run(windows ? "python" : "python3", [
+        "-B",
+        join(repo, "tests/integrations/claude_code.py"),
+        "--cli",
+        path,
+        "--tty",
+        tty,
+        "--workspace",
+        workspace,
+        "--binding",
+        binding,
+        "--claude",
+        process.env.T16_CLAUDE_BIN,
+        ...(process.env.T16_TEST_SNAPSHOT
+          ? ["--snapshot", process.env.T16_TEST_SNAPSHOT]
+          : []),
+      ]),
+    );
+  }
   try {
     integrationReview({
       cli: path,
