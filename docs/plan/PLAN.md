@@ -68,7 +68,7 @@
 | [T14 交付可独立定位和升级的 CLI](tasks/T14-stable-cli.md) | 稳定绝对路径与原子替换 | R2 | 已完成 |
 | [T15 实现配置预览、合并与回滚](tasks/T15-integration-lifecycle.md) | 五步安装生命周期与配置保护 | T14 | 已完成 |
 | [T16 交付 Claude Code 项目接入](tasks/T16-claude-code-integration.md) | 真实 Claude Code 作用域与回滚 | T15 | 已完成 |
-| [T17 交付 Codex 可信项目接入](tasks/T17-codex-integration.md) | 真实 Codex 项目信任与回滚 | T16 | 本机已验收，待跨平台核对 |
+| [T17 交付 Codex 可信项目接入](tasks/T17-codex-integration.md) | 真实 Codex 项目信任与回滚 | T16 | 已完成 |
 | [T18 交付 Cursor 项目接入](tasks/T18-cursor-integration.md) | 真实 Cursor 项目配置与回滚 | T17 | 待开始 |
 | [T19 完成桌面项目、工具链与任务流程](tasks/T19-desktop-projects-toolchains.md) | 桌面项目、工具链、构建与取消 | T18 | 待开始 |
 | [T20 完成资源、接入引导和审计界面](tasks/T20-desktop-resources-and-activity.md) | 桌面资源授权、集成、活动与设置 | T19 | 待开始 |
@@ -163,7 +163,7 @@
 
 | 当前任务 | 已验证 | 待做或阻塞 | 续做入口 |
 |---|---|---|---|
-| T17 跨平台验收 | [T17-A01/A02](tasks/T17-codex-integration.md#执行记录) 已在 macOS arm64 真实 Codex 验证项目作用域、工具调用和配置恢复 | 核对原生 CI 的 Windows 与 Intel macOS 证据 | [T17 交付 Codex 可信项目接入](tasks/T17-codex-integration.md) |
+| T18 待开始 | [T17-A01/A02](tasks/T17-codex-integration.md#三目标原生验收) 已在 Apple Silicon、Intel macOS 和 Windows x64 验证 Codex 可信项目接入、工具调用、撤销及配置恢复 | 验证 Cursor 项目接入及切换项目后的绑定隔离 | [T18 交付 Cursor 项目接入](tasks/T18-cursor-integration.md) |
 
 任务中断时，用一行替换当前检查点，写下最后通过的验收编号、修订或文件、复现命令和下一个动作。一次任务完成后保留证据在原卡，再将此处指向下一张卡。
 

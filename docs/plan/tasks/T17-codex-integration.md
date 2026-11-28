@@ -36,3 +36,15 @@ Phase 3 · v0.1 MVP　·　[返回交付总表](../PLAN.md)
 | T17-A02 / SEC-011 | 已有第三方 MCP、合成私有设置、Windows 反斜杠和含空格路径。覆盖取消确认、安装失败回滚、重复安装、修改信任后重新验证、正常卸载，以及用户配置路径与安装目标重合时拒绝预览。卸载精确恢复原字节。日常配置核验期间第三方服务的启动标记始终缺失；撤销绑定后，同一 Codex 连接收到 BINDING_REVOKED。 |
 
 **复跑。** 在 macOS 或一次性 Windows 测试用户内构建开发包。设置 `T17_CODEX_BIN` 为原生 Codex 可执行文件的绝对路径，可将 `T17_TEST_SNAPSHOT` 指向新的收据文件，运行 `node tests/installation/stable.mjs <桌面产物>`。Windows 另需设置 `T14_DISPOSABLE_PROFILE=1`。CI 固定使用官方 npm 分发的 Codex 0.172.0。[构建与 CI](../../../.github/workflows/ci.yml)
+
+### 三目标原生验收
+
+2026-11-28，修订 `f4bf90f` 的五项 CI 作业均通过。三个原生作业均使用 Codex CLI 0.172.0 完成 T17-A01/A02。日常配置核验期间第三方服务的启动标记始终缺失。隔离项目会话实际调用了 `project_context`，协商版本均为 `2025-06-18`。下表的 requestId 对应各平台本地审计中的 `LOCAL_STDIO` 成功记录。[完整 CI](https://github.com/Refinex-Space/envlume/actions/runs/46109924630)
+
+| 平台 | project_context 的 requestId | 证据 |
+|---|---|---|
+| macOS 15.8.2 arm64 | `589416d2-1f9b-4e0c-8455-aafadb18259b` | [原生日志](https://github.com/Refinex-Space/envlume/actions/runs/46109924630/job/140870964390) |
+| macOS 15.7.9 x86_64 | `b65b5364-eaf2-4b6a-a919-a077caa93865` | [原生日志](https://github.com/Refinex-Space/envlume/actions/runs/46109924630/job/140870964322) |
+| Windows Server 2025 x64 | `907afe7a-3458-4bd2-a512-0ea8da0abb1c` | [原生日志](https://github.com/Refinex-Space/envlume/actions/runs/46109924630/job/140870964289) |
+
+三个平台均恢复了原配置，拒绝未信任项目和用户层同名服务。绑定撤销后，原连接的下一次调用均返回 `BINDING_REVOKED`。模型轮次均为零。
